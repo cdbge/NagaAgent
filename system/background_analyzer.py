@@ -7,7 +7,7 @@
 
 import asyncio
 import time
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from system.config import config, logger
 from langchain_openai import ChatOpenAI
 
@@ -30,10 +30,11 @@ class ConversationAnalyzer:
         lines = []
         for m in messages[-config.api.max_history_rounds:]:
             role = m.get('role', 'user')
-            text = m.get('text', '')
+            # 修复：使用content字段而不是text字段
+            content = m.get('content', '')
             # 清理文本，移除可能导致格式化问题的字符
-            text = text.replace('{', '{{').replace('}', '}}')
-            lines.append(f"{role}: {text}")
+            content = content.replace('{', '{{').replace('}', '}}')
+            lines.append(f"{role}: {content}")
         conversation = "\n".join(lines)
         
         # 获取可用的MCP工具信息，注入到意图识别中
@@ -56,69 +57,125 @@ class ConversationAnalyzer:
             if tools_summary:
                 available_tools = "\n".join(tools_summary)
                 # 将工具信息注入到对话分析提示词中
-                return get_prompt("conversation_analyzer_prompt", 
+                return get_prompt("conversation_analyzer_prompt",
                                 conversation=conversation,
-                                available_tools=f"\n\n【可用MCP工具】\n{available_tools}\n")
+                                available_tools=available_tools)
         except Exception as e:
             logger.debug(f"获取MCP工具信息失败: {e}")
         
         return get_prompt("conversation_analyzer_prompt", conversation=conversation)
 
     def analyze(self, messages: List[Dict[str, str]]):
+        logger.info(f"[ConversationAnalyzer] 开始分析对话，消息数量: {len(messages)}")
         prompt = self._build_prompt(messages)
-        resp = self.llm.invoke([
-            {"role": "system", "content": "你是精确的任务意图提取器与MCP调用规划器。"},
-            {"role": "user", "content": prompt},
-        ])
-        text = resp.content.strip()
-        import json, re
-        tool_calls: List[Dict[str, Any]] = []
+        logger.info(f"[ConversationAnalyzer] 构建提示词完成，长度: {len(prompt)}")
 
-        # 直接解析 ，提取变量值
+        # 使用简化的非标准JSON解析
+        result = self._analyze_with_non_standard_json(prompt)
+        if result and result.get("tool_calls"):
+            return result
+
+        # 解析失败
+        logger.info("[ConversationAnalyzer] 未发现可执行任务")
+        return {"tasks": [], "reason": "未发现可执行任务", "raw": "", "tool_calls": []}
+
+    def _analyze_with_non_standard_json(self, prompt: str) -> Optional[Dict]:
+        """非标准JSON格式解析 - 解析中文括号格式"""
+        logger.info("[ConversationAnalyzer] 尝试非标准JSON格式解析")
         try:
-            # 查找 ：｛｝
-            chinese_blocks = re.findall(r"｛[\s\S]*?｝", text)
-            if chinese_blocks:
-                for chinese_block in chinese_blocks:
-                    # 直接提取变量值，不需要JSON解析
-                    tool_call = {}
+            import concurrent.futures
+
+            # 添加超时机制
+            def run_llm_with_timeout():
+                try:
+                    return self.llm.invoke([
+                        {"role": "system", "content": "你是精确的任务意图提取器与MCP调用规划器。"},
+                        {"role": "user", "content": prompt},
+                    ])
+                except Exception as e:
+                    raise e
+
+            # 在线程中运行LLM调用，设置30秒超时
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_llm_with_timeout)
+                try:
+                    resp = future.result(timeout=30)  # 30秒超时
+                    text = resp.content.strip()
+                    logger.info(f"[ConversationAnalyzer] LLM响应完成，响应长度: {len(text)}")
+                    logger.info(f"[ConversationAnalyzer] LLM原始响应内容: {text}")
+
+                    # 解析非标准JSON格式
+                    tool_calls = self._parse_non_standard_json(text)
                     
-                    # 提取agentType
-                    agent_type_match = re.search(r'"agentType":\s*"([^"]*)"', chinese_block)
-                    if agent_type_match:
-                        tool_call["agentType"] = agent_type_match.group(1)
-                    
-                    # 提取service_name
-                    service_match = re.search(r'"service_name":\s*"([^"]*)"', chinese_block)
-                    if service_match:
-                        tool_call["service_name"] = service_match.group(1)
-                    
-                    # 提取tool_name
-                    tool_match = re.search(r'"tool_name":\s*"([^"]*)"', chinese_block)
-                    if tool_match:
-                        tool_call["tool_name"] = tool_match.group(1)
-                    
-                    # 提取其他所有参数
-                    for key in ["tool_name_param", "app", "args", "task_type", "instruction", "parameters"]:
-                        pattern = f'"{key}":\s*"([^"]*)"'
-                        match = re.search(pattern, chinese_block)
-                        if match:
-                            tool_call[key] = match.group(1)
-                    
-                    # 如果找到了基本的工具调用信息，添加到列表
-                    if tool_call.get("agentType") in ["mcp", "agent"] and tool_call.get("service_name") and tool_call.get("tool_name"):
-                        tool_calls.append(tool_call)
+                    if tool_calls:
+                        logger.info(f"[ConversationAnalyzer] 非标准JSON解析成功，发现 {len(tool_calls)} 个工具调用")
+                        return {
+                            "tasks": [],
+                            "reason": f"非标准JSON解析成功，发现 {len(tool_calls)} 个工具调用",
+                            "tool_calls": tool_calls
+                        }
+                    else:
+                        logger.info("[ConversationAnalyzer] 未发现工具调用")
+                        return None
+
+                except concurrent.futures.TimeoutError:
+                    logger.error("[ConversationAnalyzer] LLM调用超时（30秒）")
+                    return None
 
         except Exception as e:
-            logger.error(f"解析 失败: {e}")
-            return {"tasks": [], "reason": f"parse error: {e}", "raw": text, "tool_calls": []}
+            logger.error(f"[ConversationAnalyzer] 非标准JSON解析失败: {e}")
+            return None
+
+    def _parse_non_standard_json(self, text: str) -> List[Dict[str, Any]]:
+        """解析非标准JSON格式 - 处理中文括号"""
+        import re
         
-        # 返回结果
-        return {
-            "tasks": [],
-            "reason": f"发现 {len(tool_calls)} 个工具调用",
-            "tool_calls": tool_calls
-        }
+        tool_calls = []
+        
+        # 查找所有非标准JSON块（使用中文括号）
+        pattern = r'｛([^｝]*)｝'
+        matches = re.findall(pattern, text, re.DOTALL)
+        
+        logger.info(f"[ConversationAnalyzer] 找到 {len(matches)} 个非标准JSON块")
+        
+        for match in matches:
+            try:
+                # 将中文括号替换为标准JSON格式
+                json_str = "{" + match + "}"
+                
+                # 解析为字典
+                tool_call = {}
+                lines = json_str.split('\n')
+                
+                for line in lines:
+                    line = line.strip()
+                    if ':' in line and not line.startswith('{') and not line.startswith('}'):
+                        # 提取键值对
+                        if '"' in line:
+                            # 处理带引号的键值对
+                            key_match = re.search(r'"([^"]*)"\s*:\s*"([^"]*)"', line)
+                            if key_match:
+                                key = key_match.group(1)
+                                value = key_match.group(2)
+                                tool_call[key] = value
+                        else:
+                            # 处理简单键值对
+                            parts = line.split(':', 1)
+                            if len(parts) == 2:
+                                key = parts[0].strip().strip('"')
+                                value = parts[1].strip().strip('"')
+                                tool_call[key] = value
+                
+                # 验证必要的字段
+                if tool_call.get("agentType") and tool_call.get("service_name") and tool_call.get("tool_name"):
+                    tool_calls.append(tool_call)
+                    logger.info(f"[ConversationAnalyzer] 解析到工具调用: {tool_call.get('tool_name', 'unknown')}")
+                
+            except Exception as e:
+                logger.warning(f"[ConversationAnalyzer] 解析非标准JSON块失败: {e}")
+                continue
+        
+        return tool_calls
 
 
 class BackgroundAnalyzer:
@@ -135,11 +192,26 @@ class BackgroundAnalyzer:
         logger.info(f"[博弈论] 创建独立分析会话: {analysis_session_id}")
         
         try:
+            logger.info(f"[博弈论] 开始异步意图分析，消息数量: {len(messages)}")
             loop = asyncio.get_running_loop()
             # Offload sync LLM call to threadpool to avoid blocking event loop
-            analysis = await loop.run_in_executor(None, self.analyzer.analyze, messages)
+            logger.info(f"[博弈论] 在线程池中执行LLM分析...")
+
+            # 添加异步超时机制
+            try:
+                analysis = await asyncio.wait_for(
+                    loop.run_in_executor(None, self.analyzer.analyze, messages),
+                    timeout=60.0  # 60秒超时
+                )
+                logger.info(f"[博弈论] LLM分析完成，结果类型: {type(analysis)}")
+            except asyncio.TimeoutError:
+                logger.error("[博弈论] 意图分析超时（60秒）")
+                return {"has_tasks": False, "reason": "意图分析超时", "tasks": [], "priority": "low"}
+
         except Exception as e:
             logger.error(f"[博弈论] 意图分析失败: {e}")
+            import traceback
+            logger.error(f"[博弈论] 详细错误信息: {traceback.format_exc()}")
             return {"has_tasks": False, "reason": f"分析失败: {e}", "tasks": [], "priority": "low"}
         
         try:
@@ -204,7 +276,7 @@ class BackgroundAnalyzer:
             
             async with httpx.AsyncClient(timeout=5.0) as client:
                 await client.post(
-                    "http://localhost:8001/tool_notification",
+                    "http://localhost:8000/tool_notification",
                     json=notification_payload
                 )
                     
@@ -251,7 +323,7 @@ class BackgroundAnalyzer:
                 "tool_calls": mcp_calls,
                 "session_id": session_id,
                 "request_id": str(uuid.uuid4()),
-                "callback_url": "http://localhost:8001/tool_result_callback"
+                "callback_url": "http://localhost:8000/tool_result_callback"
             }
             
             async with httpx.AsyncClient(timeout=30.0) as client:
