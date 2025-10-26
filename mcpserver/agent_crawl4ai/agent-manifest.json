@@ -16,5 +16,5 @@
         "example": "{\"tool_name\":\"网页解析\",\"url\":\"https://example.com\",\"max_chars\":4096}"
       }
     ]
-  },
+  }
 }
