@@ -292,9 +292,10 @@ class BackgroundAnalyzer:
                 "message": f"🔧 正在执行 {len(tool_calls)} 个工具: {', '.join(tool_names)}"
             }
             
+            from system.config import get_server_port
             async with httpx.AsyncClient(timeout=5.0) as client:
                 await client.post(
-                    "http://localhost:8000/tool_notification",
+                    f"http://localhost:{get_server_port('api_server')}/tool_notification",
                     json=notification_payload
                 )
                     
@@ -335,18 +336,19 @@ class BackgroundAnalyzer:
             import httpx
             import uuid
             
+            from system.config import get_server_port
             # 构建MCP服务器请求
             mcp_payload = {
                 "query": f"批量MCP工具调用 ({len(mcp_calls)} 个)",
                 "tool_calls": mcp_calls,
                 "session_id": session_id,
                 "request_id": str(uuid.uuid4()),
-                "callback_url": "http://localhost:8000/tool_result_callback"
+                "callback_url": f"http://localhost:{get_server_port('api_server')}/tool_result_callback"
             }
             
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
-                    "http://localhost:8003/schedule",
+                    f"http://localhost:{get_server_port('mcp_server')}/schedule",
                     json=mcp_payload
                 )
                 
@@ -374,9 +376,10 @@ class BackgroundAnalyzer:
                 "session_id": session_id
             }
             
+            from system.config import get_server_port
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
-                    "http://localhost:8002/analyze_and_execute",
+                    f"http://localhost:{get_server_port('agent_server')}/analyze_and_execute",
                     json=agent_payload
                 )
                 

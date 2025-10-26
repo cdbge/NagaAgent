@@ -238,4 +238,9 @@ async def cancel_task(task_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8003)  # MCP服务器端口
+    try:
+        from system.config import get_server_port
+        port = get_server_port("mcp_server")
+    except ImportError:
+        port = 8003  # 回退默认值
+    uvicorn.run(app, host="0.0.0.0", port=port)

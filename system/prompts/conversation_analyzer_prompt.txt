@@ -21,13 +21,13 @@
 
 ## 示例
 
-输入对话："帮我搜索今天的新闻"
+输入对话："帮我查询今天天气"
 期望输出：
 ｛
 "agentType": "mcp",
-"service_name": "searxng搜索",
-"tool_name": "网页搜索",
-"query": "今天的新闻"
+"service_name": "天气时间Agent",
+"tool_name": "today_weather",
+"city": "北京 北京"
 ｝
 
 输入对话："帮我打开浏览器"

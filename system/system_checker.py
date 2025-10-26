@@ -35,8 +35,15 @@ class SystemChecker:
         self.pyproject_file = self.project_root / "pyproject.toml"
         self.results = {}
 
-        # 需要检测的端口
-        self.required_ports = [8000, 8001, 8003, 5048]
+        # 需要检测的端口 - 从config读取
+        from system.config import get_all_server_ports
+        all_ports = get_all_server_ports()
+        self.required_ports = [
+            all_ports["api_server"],
+            all_ports["agent_server"], 
+            all_ports["mcp_server"],
+            all_ports["tts_server"]
+        ]
         
         # 镜像源配置
         self.pip_mirrors = [
@@ -703,8 +710,10 @@ class SystemChecker:
         if not self.results.get("端口可用性", True):
             print("5. 解决端口冲突:")
             print("   # 查找占用端口的进程")
-            print("   netstat -ano | findstr :8000  # Windows")
-            print("   lsof -i :8000  # Linux/Mac")
+            from system.config import get_server_port
+            api_port = get_server_port("api_server")
+            print(f"   netstat -ano | findstr :{api_port}  # Windows")
+            print(f"   lsof -i :{api_port}  # Linux/Mac")
             print("   # 或修改config.json中的端口配置")
             print()
 

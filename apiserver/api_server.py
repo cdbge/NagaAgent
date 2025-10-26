@@ -789,7 +789,8 @@ async def _trigger_chat_stream_no_intent(session_id: str, response_text: str):
         }
 
         # 调用现有的流式对话接口
-        api_url = f"http://localhost:8000/chat/stream"
+        from system.config import get_server_port
+        api_url = f"http://localhost:{get_server_port('api_server')}/chat/stream"
 
         async with httpx.AsyncClient() as client:
             async with client.stream("POST", api_url, json=chat_request) as response:
@@ -822,7 +823,8 @@ async def _notify_ui_refresh(session_id: str, response_text: str):
             "ai_response": response_text
         }
 
-        api_url = f"http://localhost:8000/ui_notification"
+        from system.config import get_server_port
+        api_url = f"http://localhost:{get_server_port('api_server')}/ui_notification"
 
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.post(api_url, json=ui_notification_payload)
@@ -853,7 +855,8 @@ async def _send_ai_response_directly(session_id: str, response_text: str):
             "skip_intent_analysis": True
         }
 
-        api_url = f"http://localhost:8000/chat"
+        from system.config import get_server_port
+        api_url = f"http://localhost:{get_server_port('api_server')}/chat"
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(api_url, json=chat_request)

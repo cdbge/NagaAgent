@@ -27,7 +27,7 @@ def create_agent_instance(manifest: Dict[str, Any]) -> Optional[Any]:
         class_name = entry_point.get('class')
         
         if not module_name or not class_name:
-            sys.stderr.write(f"manifest缺少entryPoint信息: {manifest.get('name', 'unknown')}\n")
+            sys.stderr.write(f"manifest缺少entryPoint信息: {manifest.get('displayName', 'unknown')}\n")
             return None
             
         # 动态导入模块
@@ -39,7 +39,7 @@ def create_agent_instance(manifest: Dict[str, Any]) -> Optional[Any]:
         return instance
         
     except Exception as e:
-        sys.stderr.write(f"创建agent实例失败 {manifest.get('name', 'unknown')}: {e}\n")
+        sys.stderr.write(f"创建agent实例失败 {manifest.get('displayName', 'unknown')}: {e}\n")
         return None
 
 def scan_and_register_mcp_agents(mcp_dir: str = 'mcpserver') -> list:
@@ -56,20 +56,22 @@ def scan_and_register_mcp_agents(mcp_dir: str = 'mcpserver') -> list:
                 continue
                 
             agent_type = manifest.get('agentType')
-            agent_name = manifest.get('name')
+            # 只使用displayName作为注册名称
+            service_name = manifest.get('displayName')
             
-            if not agent_name:
-                sys.stderr.write(f"manifest缺少name字段: {manifest_file}\n")
+            if not service_name:
+                sys.stderr.write(f"manifest缺少displayName字段: {manifest_file}\n")
                 continue
             
             # 根据agentType进行分类处理
             if agent_type == 'mcp':
-                # MCP类型：注册到MCP_REGISTRY
-                MANIFEST_CACHE[agent_name] = manifest
+                # MCP类型：注册到MCP_REGISTRY，使用displayName作为键
+                MANIFEST_CACHE[service_name] = manifest
                 agent_instance = create_agent_instance(manifest)
                 if agent_instance:
-                    MCP_REGISTRY[agent_name] = agent_instance
-                    registered_agents.append(agent_name)
+                    MCP_REGISTRY[service_name] = agent_instance
+                    registered_agents.append(service_name)
+                    sys.stderr.write(f"✅ 注册MCP服务: {service_name} (来自 {manifest_file})\n")
                     
             # 只处理MCP类型，Agent类型已分离到agentserver
                     
@@ -102,7 +104,6 @@ def get_service_info(service_name: str) -> Optional[Dict[str, Any]]:
         "display_name": manifest.get('displayName', service_name),
         "version": manifest.get('version', '1.0.0'),
         "capabilities": manifest.get('capabilities', {}),
-        "input_schema": manifest.get('inputSchema', {}),
         "available_tools": get_available_tools(service_name)
     }
 
@@ -128,7 +129,6 @@ def get_available_tools(service_name: str) -> List[Dict[str, Any]]:
             "name": cmd.get('command', ''),
             "description": cmd.get('description', ''),
             "example": cmd.get('example', ''),
-            "input_schema": manifest.get('inputSchema', {})
         })
     
     return tools

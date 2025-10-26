@@ -205,4 +205,5 @@ async def execute_computer_control_task(payload: Dict[str, Any]):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8002)  # 使用8002端口
+    from agentserver.config import AGENT_SERVER_PORT
+    uvicorn.run(app, host="0.0.0.0", port=AGENT_SERVER_PORT)

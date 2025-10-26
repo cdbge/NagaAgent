@@ -354,7 +354,7 @@ class MCPManager:
         """简化的统一调用接口 - 只支持MCP服务
 
         Args:
-            service_name: 服务名称
+            service_name: 服务名称（现在统一使用displayName）
             tool_name: 工具名称
             args: 工具参数
 
@@ -364,9 +364,11 @@ class MCPManager:
         try:
             # 只支持MCP服务调用（通过MCP_REGISTRY）
             from mcpserver.mcp_registry import MCP_REGISTRY # 延迟导入
-            if service_name in MCP_REGISTRY:
-                agent = MCP_REGISTRY[service_name]
-
+            
+            # 直接查找服务（现在注册名称和调用名称已经统一）
+            agent = MCP_REGISTRY.get(service_name)
+            
+            if agent:
                 # 对于MCP类型的agent，统一使用handle_handoff方法
                 if hasattr(agent, 'handle_handoff'):
                     # 构建handoff请求数据
