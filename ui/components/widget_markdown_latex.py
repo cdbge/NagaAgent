@@ -7,7 +7,7 @@ from pathlib import Path
 from nagaagent_core.vendors.PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QPushButton, QHBoxLayout, QApplication, QLabel, QSizePolicy
 from nagaagent_core.vendors.PyQt5.QtWebEngineWidgets import QWebEngineView
 from nagaagent_core.vendors.PyQt5.QtCore import Qt, QUrl
-from markdown import markdown
+from nagaagent_core.vendors.markdown import markdown
 
 
 # ---------- 与 demo 相同的模板 ----------

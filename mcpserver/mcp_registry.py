@@ -7,79 +7,14 @@ from pathlib import Path
 import sys
 from typing import Dict, Any, Optional, List
 
-MCP_REGISTRY = {} # 全局MCP服务池
-MANIFEST_CACHE = {} # 缓存manifest信息
-
-def load_manifest_file(manifest_path: Path) -> Optional[Dict[str, Any]]:
-    """加载manifest文件"""
-    try:
-        with open(manifest_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e:
-        sys.stderr.write(f"加载manifest文件失败 {manifest_path}: {e}\n")
-        return None
-
-def create_agent_instance(manifest: Dict[str, Any]) -> Optional[Any]:
-    """根据manifest创建agent实例"""
-    try:
-        entry_point = manifest.get('entryPoint', {})
-        module_name = entry_point.get('module')
-        class_name = entry_point.get('class')
-        
-        if not module_name or not class_name:
-            sys.stderr.write(f"manifest缺少entryPoint信息: {manifest.get('displayName', 'unknown')}\n")
-            return None
-            
-        # 动态导入模块
-        module = importlib.import_module(module_name)
-        agent_class = getattr(module, class_name)
-        
-        # 创建实例
-        instance = agent_class()
-        return instance
-        
-    except Exception as e:
-        sys.stderr.write(f"创建agent实例失败 {manifest.get('displayName', 'unknown')}: {e}\n")
-        return None
-
-def scan_and_register_mcp_agents(mcp_dir: str = 'mcpserver') -> list:
-    """扫描目录中的JSON元数据文件，注册MCP类型的agent和Agent类型的agent"""
-    d = Path(mcp_dir)
-    registered_agents = []
-    
-    # 扫描所有agent-manifest.json文件
-    for manifest_file in d.glob('**/agent-manifest.json'):
-        try:
-            # 加载manifest
-            manifest = load_manifest_file(manifest_file)
-            if not manifest:
-                continue
-                
-            agent_type = manifest.get('agentType')
-            # 只使用displayName作为注册名称
-            service_name = manifest.get('displayName')
-            
-            if not service_name:
-                sys.stderr.write(f"manifest缺少displayName字段: {manifest_file}\n")
-                continue
-            
-            # 根据agentType进行分类处理
-            if agent_type == 'mcp':
-                # MCP类型：注册到MCP_REGISTRY，使用displayName作为键
-                MANIFEST_CACHE[service_name] = manifest
-                agent_instance = create_agent_instance(manifest)
-                if agent_instance:
-                    MCP_REGISTRY[service_name] = agent_instance
-                    registered_agents.append(service_name)
-                    sys.stderr.write(f"✅ 注册MCP服务: {service_name} (来自 {manifest_file})\n")
-                    
-            # 只处理MCP类型，Agent类型已分离到agentserver
-                    
-        except Exception as e:
-            sys.stderr.write(f"处理manifest文件失败 {manifest_file}: {e}\n")
-            continue
-    
-    return registered_agents
+# 从稳定模块导入MCP管理功能
+from nagaagent_core.stable.mcp import (
+    load_manifest_file,
+    create_agent_instance,
+    scan_and_register_mcp_agents,
+    MCP_REGISTRY,
+    MANIFEST_CACHE
+)
 
 def get_service_info(service_name: str) -> Optional[Dict[str, Any]]:
     """获取指定服务的详细信息

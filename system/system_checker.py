@@ -21,8 +21,8 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime
-from charset_normalizer import from_path
-import json5  # 支持带注释的JSON解析
+from nagaagent_core.vendors.charset_normalizer import from_path
+from nagaagent_core.vendors import json5  # 支持带注释的JSON解析
 
 class SystemChecker:
     """系统环境检测器"""

@@ -39,20 +39,28 @@ class ConversationAnalyzer:
         
         # 获取可用的MCP工具信息，注入到意图识别中
         try:
-            from mcpserver.mcp_registry import get_all_services_info
-            services_info = get_all_services_info()
+            from nagaagent_core.stable.mcp import get_registered_services, get_service_info
+            registered_services = get_registered_services()
+            services_info = {name: get_service_info(name) for name in registered_services}
             
             # 构建工具信息摘要
             tools_summary = []
             for name, info in services_info.items():
-                display_name = info.get("display_name", name)
-                description = info.get("description", "")
-                tools = [t.get("name") for t in info.get("available_tools", [])]
-                
-                if tools:
-                    tools_summary.append(f"- {display_name}: {description} (工具: {', '.join(tools)})")
-                else:
-                    tools_summary.append(f"- {display_name}: {description}")
+                if info:
+                    display_name = info.get("displayName", name)
+                    description = info.get("description", "")
+                    capabilities = info.get("capabilities", {})
+                    
+                    # 提取工具名称
+                    tools = []
+                    for cap_name, cap_info in capabilities.items():
+                        if isinstance(cap_info, dict) and "tools" in cap_info:
+                            tools.extend(cap_info["tools"])
+                    
+                    if tools:
+                        tools_summary.append(f"- {display_name}: {description} (工具: {', '.join(tools)})")
+                    else:
+                        tools_summary.append(f"- {display_name}: {description}")
             
             if tools_summary:
                 available_tools = "\n".join(tools_summary)
@@ -113,74 +121,8 @@ class ConversationAnalyzer:
 
     def _parse_non_standard_json(self, text: str) -> List[Dict[str, Any]]:
         """解析非标准JSON格式 - 处理中文括号和标准JSON"""
-        import re
-        import json
-        
-        tool_calls = []
-        
-        # 方法1：尝试解析标准JSON格式
-        try:
-            # 查找标准JSON块
-            json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
-            json_matches = re.findall(json_pattern, text, re.DOTALL)
-            
-            for json_str in json_matches:
-                try:
-                    tool_call = json.loads(json_str)
-                    if isinstance(tool_call, dict) and tool_call.get("agentType") and tool_call.get("service_name") and tool_call.get("tool_name"):
-                        tool_calls.append(tool_call)
-                        logger.info(f"[ConversationAnalyzer] 标准JSON解析成功: {tool_call.get('tool_name', 'unknown')}")
-                except json.JSONDecodeError:
-                    continue
-        except Exception as e:
-            logger.debug(f"[ConversationAnalyzer] 标准JSON解析失败: {e}")
-        
-        # 方法2：如果标准JSON解析失败，尝试中文括号格式
-        if not tool_calls:
-            # 查找所有非标准JSON块（使用中文括号）
-            pattern = r'｛([^｝]*)｝'
-            matches = re.findall(pattern, text, re.DOTALL)
-            
-            logger.info(f"[ConversationAnalyzer] 找到 {len(matches)} 个非标准JSON块")
-            
-            for match in matches:
-                try:
-                    # 将中文括号替换为标准JSON格式
-                    json_str = "{" + match + "}"
-                    
-                    # 解析为字典
-                    tool_call = {}
-                    lines = json_str.split('\n')
-                    
-                    for line in lines:
-                        line = line.strip()
-                        if ':' in line and not line.startswith('{') and not line.startswith('}'):
-                            # 提取键值对
-                            if '"' in line:
-                                # 处理带引号的键值对
-                                key_match = re.search(r'"([^"]*)"\s*:\s*"([^"]*)"', line)
-                                if key_match:
-                                    key = key_match.group(1)
-                                    value = key_match.group(2)
-                                    tool_call[key] = value
-                            else:
-                                # 处理简单键值对
-                                parts = line.split(':', 1)
-                                if len(parts) == 2:
-                                    key = parts[0].strip().strip('"')
-                                    value = parts[1].strip().strip('"')
-                                    tool_call[key] = value
-                    
-                    # 验证必要的字段
-                    if tool_call.get("agentType") and tool_call.get("service_name") and tool_call.get("tool_name"):
-                        tool_calls.append(tool_call)
-                        logger.info(f"[ConversationAnalyzer] 中文括号解析成功: {tool_call.get('tool_name', 'unknown')}")
-                    
-                except Exception as e:
-                    logger.warning(f"[ConversationAnalyzer] 解析非标准JSON块失败: {e}")
-                    continue
-        
-        return tool_calls
+        from nagaagent_core.stable.parsing import parse_non_standard_json
+        return parse_non_standard_json(text)
 
 
 class BackgroundAnalyzer:

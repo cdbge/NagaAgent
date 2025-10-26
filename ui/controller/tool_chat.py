@@ -310,7 +310,7 @@ class ChatTool(QObject):
         line=new_text.count('\n')
         # 处理消息格式化
         msg = extract_message(new_text)
-        from markdown import markdown
+        from nagaagent_core.vendors.markdown import markdown
         content_html = str(msg).replace('\n', '<br>')
         content_html = markdown(content_html, extensions=['extra', 'codehilite'])
 
