@@ -188,18 +188,39 @@ graph TB
 - **MCP (Model Context Protocol)** 工具调用
 - **OpenAI兼容API** + 多种LLM服务商支持
 
-```
 
----
-
-## 部署运行教程
+## 非一键包部署运行教程
 
 ### 环境要求
-- Python 3.11
+- Python 3.11（你总不能连这东西都不会安装以及配置吧？）
 - 可选：uv工具（加速依赖安装）
 
 ### 快速开始
+#### 安装必备软件（Windows）
+- Git
+```bash
+#Win11可直接通过以下命令安装Git
+winget install Git.Git
+#Linux（安装方式多样，请自行搜索）
+sudo apt-get install git
+#Mac
+brew install git
+```
 
+- UV（可选）
+```bash
+#通过python安装uv（win）
+pip install uv
+#Mac与Linux请从github发布页自行安装
+```
+#### 克隆代码
+新建文件夹到任意路径（最好不要有中文）
+然后在此文件夹内右击打开cmd
+运行以下命令
+```bash
+git clone https://github.com/Xxiii8322766509/NagaAgent.git
+```
+克隆完成后cd NagaAgent根目录（推荐powershell）
 #### 1. 初始化项目
 ```bash
 # 使用 setup.py 自动初始化
@@ -208,7 +229,7 @@ python setup.py
 # 或使用 setup.sh (Linux/macOS)
 ./setup.sh
 
-# 或使用 setup.bat (Windows)
+# 或双击 setup.bat (Windows)
 setup.bat
 ```
 
@@ -246,6 +267,7 @@ uv sync
 ```
 
 #### 3. 启动应用
+注意：请在虚拟环境中运行Naga以保证稳定（如果您未安装uv）
 ```bash
 # 使用启动脚本
 ./start.sh          # Linux/macOS
@@ -258,14 +280,15 @@ source .venv/bin/activate
 # Windows
 .\.venv\Scripts\activate
 python main.py
-# uv
+# uv（无需虚拟环境）
 uv run main.py
 ```
-
+如何检测自己是否在虚拟环境？
+在命令行前有（.venv）即可
 ### 可选配置
 
 #### 启用知识图谱记忆
-在 `config.json` 中配置Neo4j数据库：
+在您的 `config.json` 中配置Neo4j数据库：
 ```json
 {
   "grag": {
@@ -289,13 +312,14 @@ uv run main.py
 }
 ```
 
-### 故障排除
+### 以下可以解决您可能遗漏的方面
 
 #### 常见问题
 1. **Python版本不兼容**：确保使用Python 3.11
-2. **端口被占用**：检查8000、8001、8003、5048端口是否可用，或更改为其他端口
+2. **端口被占用**：检查8000、8001、8003、5048等端口是否可用，或更改为其他端口
 3. **依赖安装失败**：尝试使用uv工具重新安装
 4. **Neo4j连接失败**：确保Neo4j服务正在运行
+5. **如果还有其他问题，请来到交流群询问，请附上log**
 
 #### 系统检测
 ```bash
