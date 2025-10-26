@@ -26,16 +26,295 @@ NagaAgent 是一个功能丰富的智能对话助手系统，具有以下特色�
 - **系统托盘集成**：后台运行和快捷操作
 
 ### 🛠️ 技术架构
+
+#### 系统整体架构
+```mermaid
+graph TB
+    %% 用户界面层
+    subgraph "用户界面层 (UI Layer)"
+        UI[PyQt5 GUI界面]
+        Live2D[Live2D虚拟形象]
+        Tray[系统托盘]
+        Chat[聊天界面]
+    end
+
+    %% 核心服务层
+    subgraph "核心服务层 (Core Services)"
+        API[API服务器<br/>:8000]
+        Agent[Agent服务器<br/>:8001]
+        MCP[MCP服务器<br/>:8003]
+        TTS[TTS服务器<br/>:5048]
+    end
+
+    %% 业务逻辑层
+    subgraph "业务逻辑层 (Business Logic)"
+        Game[博弈论系统<br/>多Agent协作]
+        Memory[GRAG记忆系统<br/>知识图谱]
+        Voice[语音处理系统<br/>实时语音交互]
+        Tools[工具调用系统<br/>MCP协议]
+    end
+
+    %% 数据存储层
+    subgraph "数据存储层 (Data Storage)"
+        Neo4j[(Neo4j图数据库<br/>知识图谱存储)]
+        Files[文件系统<br/>配置/日志/缓存]
+        MemoryCache[内存缓存<br/>会话状态]
+    end
+
+    %% 外部服务层
+    subgraph "外部服务层 (External Services)"
+        LLM[LLM服务商<br/>OpenAI/通义千问等]
+        Portal[NagaPortal<br/>门户服务]
+        MQTT[物联网设备<br/>MQTT通讯]
+        Web[网络爬虫<br/>在线搜索]
+    end
+
+    %% 连接关系
+    UI --> API
+    UI --> Agent
+    UI --> MCP
+    UI --> TTS
+    
+    API --> Game
+    API --> Memory
+    API --> Voice
+    API --> Tools
+    
+    Agent --> Game
+    Agent --> Tools
+    
+    MCP --> Tools
+    MCP --> Portal
+    MCP --> MQTT
+    MCP --> Web
+    
+    TTS --> Voice
+    
+    Game --> Memory
+    Memory --> Neo4j
+    Voice --> LLM
+    Tools --> LLM
+    
+    API --> MemoryCache
+    Agent --> MemoryCache
+    MCP --> MemoryCache
+    
+    %% 样式
+    classDef uiLayer fill:#e1f5fe
+    classDef coreLayer fill:#f3e5f5
+    classDef businessLayer fill:#e8f5e8
+    classDef dataLayer fill:#fff3e0
+    classDef externalLayer fill:#fce4ec
+    
+    class UI,Live2D,Tray,Chat uiLayer
+    class API,Agent,MCP,TTS coreLayer
+    class Game,Memory,Voice,Tools businessLayer
+    class Neo4j,Files,MemoryCache dataLayer
+    class LLM,Portal,MQTT,Web externalLayer
+```
+
+#### 服务架构
+```mermaid
+graph LR
+    %% 主程序入口
+    Main[main.py<br/>主程序入口]
+    
+    %% 服务管理器
+    ServiceManager[ServiceManager<br/>服务管理器]
+    
+    %% 四个核心服务
+    subgraph "并行服务架构"
+        API_Server[API服务器<br/>:8000<br/>FastAPI]
+        Agent_Server[Agent服务器<br/>:8001<br/>任务调度]
+        MCP_Server[MCP服务器<br/>:8003<br/>工具调用]
+        TTS_Server[TTS服务器<br/>:5048<br/>语音合成]
+    end
+    
+    %% 后台服务
+    subgraph "后台服务"
+        TaskManager[任务管理器<br/>异步任务处理]
+        MemoryManager[记忆管理器<br/>GRAG系统]
+        VoiceManager[语音管理器<br/>实时语音处理]
+    end
+    
+    %% 外部连接
+    subgraph "外部连接"
+        NagaPortal[NagaPortal<br/>自动登录]
+        MQTT_Conn[物联网通讯<br/>MQTT连接]
+    end
+    
+    %% 连接关系
+    Main --> ServiceManager
+    ServiceManager --> API_Server
+    ServiceManager --> Agent_Server
+    ServiceManager --> MCP_Server
+    ServiceManager --> TTS_Server
+    
+    ServiceManager --> TaskManager
+    ServiceManager --> MemoryManager
+    ServiceManager --> VoiceManager
+    
+    ServiceManager --> NagaPortal
+    ServiceManager --> MQTT_Conn
+    
+    %% 样式
+    classDef main fill:#ff9800,color:#fff
+    classDef service fill:#2196f3,color:#fff
+    classDef background fill:#4caf50,color:#fff
+    classDef external fill:#9c27b0,color:#fff
+    
+    class Main main
+    class API_Server,Agent_Server,MCP_Server,TTS_Server service
+    class TaskManager,MemoryManager,VoiceManager background
+    class NagaPortal,MQTT_Conn external
+```
+
+#### 核心特性
 - **多服务并行**：API服务器(8000)、Agent服务器(8001)、MCP服务器(8003)、TTS服务器(5048)
 - **模块化设计**：各服务独立运行，支持热插拔
 - **配置驱动**：实时配置热更新，无需重启
 - **跨平台支持**：Windows、macOS、Linux
 
 ### 🔧 技术栈
-- Python 3.11 + PyQt5 + FastAPI
-- Neo4j图数据库 + GRAG知识图谱
-- MCP (Model Context Protocol) 工具调用
-- OpenAI兼容API + 多种LLM服务商支持  
+
+#### 技术栈架构
+```mermaid
+graph TB
+    %% 前端技术栈
+    subgraph "前端技术栈 (Frontend Stack)"
+        PyQt5[PyQt5<br/>GUI框架]
+        Live2D[Live2D<br/>虚拟形象]
+        QSS[QSS<br/>样式表]
+    end
+    
+    %% 后端技术栈
+    subgraph "后端技术栈 (Backend Stack)"
+        FastAPI[FastAPI<br/>Web框架]
+        Uvicorn[Uvicorn<br/>ASGI服务器]
+        AsyncIO[AsyncIO<br/>异步编程]
+    end
+    
+    %% 数据库技术栈
+    subgraph "数据库技术栈 (Database Stack)"
+        Neo4j[Neo4j<br/>图数据库]
+        GRAG[GRAG<br/>知识图谱]
+        Memory[内存缓存<br/>会话管理]
+    end
+    
+    %% AI技术栈
+    subgraph "AI技术栈 (AI Stack)"
+        OpenAI[OpenAI API<br/>GPT模型]
+        Qwen[通义千问<br/>多模态模型]
+        MCP[MCP协议<br/>工具调用]
+    end
+    
+    %% 语音技术栈
+    subgraph "语音技术栈 (Voice Stack)"
+        ASR[语音识别<br/>ASR]
+        TTS[语音合成<br/>TTS]
+        Realtime[实时语音<br/>WebRTC]
+    end
+    
+    %% 网络技术栈
+    subgraph "网络技术栈 (Network Stack)"
+        HTTP[HTTP/HTTPS<br/>RESTful API]
+        WebSocket[WebSocket<br/>实时通信]
+        MQTT[MQTT<br/>物联网协议]
+    end
+    
+    %% 样式
+    classDef frontend fill:#e3f2fd
+    classDef backend fill:#f1f8e9
+    classDef database fill:#fff3e0
+    classDef ai fill:#fce4ec
+    classDef voice fill:#e8f5e8
+    classDef network fill:#f3e5f5
+    
+    class PyQt5,Live2D,QSS frontend
+    class FastAPI,Uvicorn,AsyncIO backend
+    class Neo4j,GRAG,Memory database
+    class OpenAI,Qwen,MCP ai
+    class ASR,TTS,Realtime voice
+    class HTTP,WebSocket,MQTT network
+```
+
+#### 核心技术
+- **Python 3.11** + PyQt5 + FastAPI
+- **Neo4j图数据库** + GRAG知识图谱
+- **MCP (Model Context Protocol)** 工具调用
+- **OpenAI兼容API** + 多种LLM服务商支持
+
+#### 数据流架构
+```mermaid
+graph TD
+    %% 用户输入
+    User[用户输入<br/>文本/语音/文件]
+    
+    %% 输入处理
+    subgraph "输入处理层"
+        TextInput[文本输入处理]
+        VoiceInput[语音输入处理<br/>ASR转换]
+        FileInput[文件输入处理<br/>文档解析]
+    end
+    
+    %% 核心处理
+    subgraph "核心处理层"
+        IntentAnalysis[意图分析<br/>Agent服务器]
+        TaskPlanning[任务规划<br/>博弈论系统]
+        MemoryQuery[记忆查询<br/>GRAG系统]
+        ToolCall[工具调用<br/>MCP协议]
+    end
+    
+    %% LLM处理
+    LLM[LLM处理<br/>OpenAI/通义千问]
+    
+    %% 输出处理
+    subgraph "输出处理层"
+        TextOutput[文本输出<br/>流式响应]
+        VoiceOutput[语音输出<br/>TTS合成]
+        ActionOutput[动作输出<br/>工具执行]
+    end
+    
+    %% 用户反馈
+    UserFeedback[用户反馈]
+    
+    %% 数据流
+    User --> TextInput
+    User --> VoiceInput
+    User --> FileInput
+    
+    TextInput --> IntentAnalysis
+    VoiceInput --> IntentAnalysis
+    FileInput --> IntentAnalysis
+    
+    IntentAnalysis --> TaskPlanning
+    TaskPlanning --> MemoryQuery
+    MemoryQuery --> ToolCall
+    ToolCall --> LLM
+    
+    LLM --> TextOutput
+    LLM --> VoiceOutput
+    LLM --> ActionOutput
+    
+    TextOutput --> UserFeedback
+    VoiceOutput --> UserFeedback
+    ActionOutput --> UserFeedback
+    
+    UserFeedback --> User
+    
+    %% 样式
+    classDef input fill:#e3f2fd
+    classDef process fill:#f1f8e9
+    classDef llm fill:#fff3e0
+    classDef output fill:#fce4ec
+    classDef user fill:#ffebee
+    
+    class TextInput,VoiceInput,FileInput input
+    class IntentAnalysis,TaskPlanning,MemoryQuery,ToolCall process
+    class LLM llm
+    class TextOutput,VoiceOutput,ActionOutput output
+    class User,UserFeedback user
+```
 
 ---
 
