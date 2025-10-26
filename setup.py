@@ -55,7 +55,10 @@ def is_uv_available() -> bool:
     """
     检查是否安装并在 PATH 中可用的 `uv` 工具
     """
-    proc = subprocess.run(["uv", "-V"], capture_output=True, text=True)
+    try:
+        proc = subprocess.run(["uv", "-V"], capture_output=True, text=True)
+    except:
+        return False
     out = (proc.stdout or proc.stderr).strip()
     if out:
         return True
