@@ -73,8 +73,8 @@ NagaAgent 是一個基於 PyQt5 的桌面智慧對話助手，圍繞四個本地
 ## 系統架構
 
 ```mermaid
-graph TB
-    subgraph UI["UI 層 (PyQt5, 主行程)"]
+flowchart TB
+    subgraph UI["UI 層 · PyQt5 主行程"]
         Main["main.py<br/>ServiceManager"]
         Chat["聊天視窗"]
         Live2D["Live2D"]
@@ -82,7 +82,7 @@ graph TB
         Settings["設定面板"]
     end
 
-    subgraph Services["本地服務（main.py 以執行緒啟動）"]
+    subgraph Services["本地服務 · main.py 以執行緒啟動"]
         API["API 伺服器 :18000<br/>servers/apiserver/"]
         Agent["Agent 伺服器 :18001<br/>servers/agentserver/"]
         MCP["MCP 伺服器 :18003<br/>servers/mcpserver/"]
@@ -98,7 +98,7 @@ graph TB
 
     subgraph Ext["外部相依"]
         LLM["LLM API<br/>OpenAI 相容"]
-        Neo4j[("Neo4j<br/>選用")]
+        Neo4j["Neo4j<br/>選用"]
         Tool["MCP Agent<br/>servers/mcpserver/agent_*"]
     end
 
@@ -108,7 +108,7 @@ graph TB
     Main --> Agent
     Main --> MCP
     Main --> TTS
-    Config --- Services
+    Config --- API
     Registry --> Tool
     MCP --> Registry
     Memory --> Neo4j

@@ -68,8 +68,8 @@ NagaAgent is a PyQt5 desktop AI assistant built around four local services and a
 ## Architecture
 
 ```mermaid
-graph TB
-    subgraph UI["UI Layer (PyQt5, main process)"]
+flowchart TB
+    subgraph UI["UI Layer · PyQt5 main process"]
         Main["main.py<br/>ServiceManager"]
         Chat["Chat window"]
         Live2D["Live2D"]
@@ -77,7 +77,7 @@ graph TB
         Settings["Settings panel"]
     end
 
-    subgraph Services["Local services (started as threads by main.py)"]
+    subgraph Services["Local services · started as threads by main.py"]
         API["API server :18000<br/>servers/apiserver/"]
         Agent["Agent server :18001<br/>servers/agentserver/"]
         MCP["MCP server :18003<br/>servers/mcpserver/"]
@@ -93,7 +93,7 @@ graph TB
 
     subgraph Ext["External dependencies"]
         LLM["LLM API<br/>OpenAI-compatible"]
-        Neo4j[("Neo4j<br/>optional")]
+        Neo4j["Neo4j<br/>optional"]
         Tool["MCP Agent<br/>servers/mcpserver/agent_*"]
     end
 
@@ -103,7 +103,7 @@ graph TB
     Main --> Agent
     Main --> MCP
     Main --> TTS
-    Config --- Services
+    Config --- API
     Registry --> Tool
     MCP --> Registry
     Memory --> Neo4j

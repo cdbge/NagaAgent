@@ -70,8 +70,8 @@ NagaAgent 是一个基于 PyQt5 的桌面智能对话助手，围绕四个本地
 ## 系统架构
 
 ```mermaid
-graph TB
-    subgraph UI["UI 层 (PyQt5, 主进程)"]
+flowchart TB
+    subgraph UI["UI 层 · PyQt5 主进程"]
         Main["main.py<br/>ServiceManager"]
         Chat["聊天窗口"]
         Live2D["Live2D"]
@@ -79,7 +79,7 @@ graph TB
         Settings["设置面板"]
     end
 
-    subgraph Services["本地服务（main.py 以线程启动）"]
+    subgraph Services["本地服务 · main.py 以线程启动"]
         API["API 服务器 :18000<br/>servers/apiserver/"]
         Agent["Agent 服务器 :18001<br/>servers/agentserver/"]
         MCP["MCP 服务器 :18003<br/>servers/mcpserver/"]
@@ -94,7 +94,7 @@ graph TB
         Health["core/system/health_check.py<br/>运行期诊断"]
     end
 
-    subgraph Loop["对话链路 (servers/apiserver/)"]
+    subgraph Loop["对话链路 · servers/apiserver/"]
         Routes["routes/<br/>按域拆分的端点"]
         Schemas["tool_schemas.py<br/>工具 → function 定义"]
         LoopCore["agentic_tool_loop.py<br/>模型自主调工具"]
@@ -103,7 +103,7 @@ graph TB
 
     subgraph Ext["外部依赖"]
         LLM["LLM API<br/>OpenAI 兼容"]
-        Neo4j[("Neo4j<br/>可选")]
+        Neo4j["Neo4j<br/>可选"]
         Tool["MCP Agent<br/>servers/mcpserver/agent_*"]
     end
 
@@ -113,7 +113,7 @@ graph TB
     Main --> Agent
     Main --> MCP
     Main --> TTS
-    Config --- Services
+    Config --- API
     Registry --> Tool
     MCP --> Registry
     Memory --> Neo4j
@@ -122,7 +122,7 @@ graph TB
     Schemas --> LoopCore
     LoopCore --> Compress
     LoopCore --> LLM
-    Health -.探活.-> Services
+    Health -.->|探活| API
     TTS --> Chat
 ```
 
