@@ -35,7 +35,7 @@
 > Changes are concentrated in `ui/` plus a little `core/`; merge conflicts will mostly be in `ui/`.
 
 > **This is a developer tool.** You need Python 3.11 and basic command-line skills.
-> There is no graphical installer or bundled all-in-one package ~~(I'll get to it when I have time).~~
+> There is no graphical installer or bundled all-in-one package <del>(I'll get to it when I have time).</del>
 
 ## Contents
 
