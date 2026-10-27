@@ -274,6 +274,8 @@ from .routes import sessions as _r_sessions  # noqa: E402
 from .routes import system as _r_system  # noqa: E402
 from .routes import tools as _r_tools  # noqa: E402
 from .routes import ui as _r_ui  # noqa: E402
+from .routes import upload as _r_upload  # noqa: E402
 
-for _module in (_r_system, _r_chat, _r_sessions, _r_tools, _r_intent, _r_ui):
+for _module in (_r_system, _r_chat, _r_sessions, _r_tools, _r_intent,
+                _r_ui, _r_upload):
     app.include_router(_module.router)

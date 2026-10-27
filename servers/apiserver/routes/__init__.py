@@ -11,5 +11,6 @@ from . import sessions  # noqa: F401
 from . import tools  # noqa: F401
 from . import intent  # noqa: F401
 from . import ui  # noqa: F401
+from . import upload  # noqa: F401
 
-__all__ = ["system", "chat", "sessions", "tools", "intent", "ui"]
+__all__ = ["system", "chat", "sessions", "tools", "intent", "ui", "upload"]
