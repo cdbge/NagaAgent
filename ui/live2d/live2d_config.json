@@ -69,12 +69,6 @@
   },
   "selected_actions": [
     {
-      "type": "motion",
-      "name": "Sleep",
-      "display": "Sleep",
-      "icon": "😴"
-    },
-    {
       "type": "expression",
       "name": "Dark Eye",
       "display": "Dark Eye",
@@ -88,33 +82,39 @@
     },
     {
       "type": "expression",
-      "name": "Cry",
-      "display": "Cry",
-      "icon": "😢"
+      "name": "【SV】Mic",
+      "display": "SV Mic",
+      "icon": "🎤"
     },
     {
       "type": "expression",
-      "name": "Blush",
-      "display": "Blush",
-      "icon": "😊"
+      "name": "【Utau】Mic",
+      "display": "Utau Mic",
+      "icon": "🎤"
+    },
+    {
+      "type": "expression",
+      "name": "Star Eye",
+      "display": "Star Eye",
+      "icon": "🤩"
+    },
+    {
+      "type": "motion",
+      "name": "Sleep",
+      "display": "Sleep",
+      "icon": "😴"
+    },
+    {
+      "type": "expression",
+      "name": "chibi",
+      "display": "chibi",
+      "icon": "🥺"
     },
     {
       "type": "expression",
       "name": "Exp eye",
       "display": "Exp eye",
       "icon": "👀"
-    },
-    {
-      "type": "expression",
-      "name": "Love",
-      "display": "Love",
-      "icon": "😍"
-    },
-    {
-      "type": "expression",
-      "name": "SV Utau ALT",
-      "display": "SV Utau ALT",
-      "icon": "🎵"
     }
   ],
   "emoji_mapping": {

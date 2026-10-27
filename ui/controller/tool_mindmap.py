@@ -1,7 +1,15 @@
 import os
 import logging
-from system.config import config
+from pathlib import Path
+from core.system.config import config
 from . import chat
+
+logger = logging.getLogger(__name__)
+
+# 基于仓库根目录定位，避免 cwd 不是仓库根时静默找不到文件
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_KG_DIR = _REPO_ROOT / "data" / "logs" / "knowledge_graph"
+
 
 class MindmapTool():
     def __init__(self, window):
@@ -11,8 +19,8 @@ class MindmapTool():
         """打开心智云图"""
         try:
             # 检查是否存在知识图谱文件
-            graph_file = "logs/knowledge_graph/graph.html"
-            quintuples_file = "logs/knowledge_graph/quintuples.json"
+            graph_file = str(_KG_DIR / "graph.html")
+            quintuples_file = str(_KG_DIR / "quintuples.json")
             
             # 如果quintuples.json存在，删除现有的graph.html并重新生成
             if os.path.exists(quintuples_file):
@@ -27,19 +35,12 @@ class MindmapTool():
                 # 生成新的HTML
                 chat.add_user_message("系统", "🔄 正在生成心智云图...")
                 try:
-                    from summer_memory.quintuple_visualize_v2 import visualize_quintuples
+                    from core.summer_memory.quintuple_visualize_v2 import visualize_quintuples
                     visualize_quintuples()
                     if os.path.exists(graph_file):
                         import webbrowser
-                        # 获取正确的绝对路径
-                        if os.path.isabs(graph_file):
-                            abs_graph_path = graph_file
-                        else:
-                            # 如果是相对路径，基于项目根目录构建绝对路径
-                            current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                            abs_graph_path = os.path.join(current_dir, graph_file)
-                        
-                        webbrowser.open("file:///" + abs_graph_path)
+                        # graph_file 已是基于仓库根的绝对路径
+                        webbrowser.open(Path(graph_file).as_uri())
                         chat.add_user_message("系统", "🧠 心智云图已生成并打开")
                     else:
                         chat.add_user_message("系统", "❌ 心智云图生成失败")

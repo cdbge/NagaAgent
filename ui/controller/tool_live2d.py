@@ -1,6 +1,5 @@
-from system.config import config
-import os
-from system.config import config, logger
+from core.system.config import config
+from core.system.config import logger
 from . import chat
 
 class Live2DTool():

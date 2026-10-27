@@ -7,13 +7,12 @@ Live2D Widget（精简版）
 
 import logging
 from typing import Optional, Callable
-from nagaagent_core.vendors.PyQt5.QtWidgets import QOpenGLWidget
-from nagaagent_core.vendors.PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
-from nagaagent_core.vendors.PyQt5.QtGui import QMouseEvent
+from PyQt5.QtWidgets import QOpenGLWidget
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
+from PyQt5.QtGui import QMouseEvent
 
 from .renderer import Live2DRenderer, RendererState
 from .animator import Live2DAnimator
-from .config_manager import get_config
 
 logger = logging.getLogger("live2d.widget")
 
@@ -433,26 +432,3 @@ class Live2DWidget(QOpenGLWidget):
         super().wheelEvent(event)
 
 
-def create_widget_from_config(parent=None, config=None):
-    """从配置创建Widget"""
-    if config is None:
-        config = get_config()
-
-    # 基本配置
-    target_fps = 60
-    scale_factor = 1.0
-
-    if config and config.performance:
-        target_fps = getattr(config.performance, 'target_fps', 60)
-
-    if config and config.model:
-        scale_factor = getattr(config.model, 'scale_factor', 1.0)
-
-    widget = Live2DWidget(
-        parent=parent,
-        target_fps=target_fps,
-        scale_factor=scale_factor
-    )
-
-    logger.debug(f"从配置创建Widget，FPS: {target_fps}, 缩放: {scale_factor}")
-    return widget

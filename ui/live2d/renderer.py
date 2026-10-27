@@ -14,7 +14,33 @@ from typing import Optional, Callable, Dict, List, Any
 from enum import Enum
 from .auto_configurator import Live2DAutoConfigurator
 
-logger = logging.getLogger("live2d.renderer")
+logger = logging.getLogger("live2d.renderer")
+
+
+def _clear_rgba(alpha: int):
+    """取当前主题的背景色作为 OpenGL 清屏色。
+
+    返回 (r, g, b, a)，均已归一化到 0..1。
+    主题不可用时回退到中性深灰，保证不崩。
+    """
+    try:
+        from ui.styles.tokens import get_theme
+
+        t = get_theme()
+        hex_color = t.bg.lstrip("#")
+        if len(hex_color) == 3:
+            hex_color = "".join(c * 2 for c in hex_color)
+        r = int(hex_color[0:2], 16) / 255.0
+        g = int(hex_color[2:4], 16) / 255.0
+        b = int(hex_color[4:6], 16) / 255.0
+        # 一律不透明：Live2D 控件本身开了 WA_TranslucentBackground，
+        # 清屏色再带 alpha 的话整块会透出桌面（悬停时尤其明显）。
+        a = 1.0
+        return r, g, b, a
+    except Exception:
+        return 0.15, 0.15, 0.15, max(0.0, min(1.0, alpha / 255.0))
+
+
 
 # 尝试导入Live2D模块 - 避免与本地目录冲突
 LIVE2D_AVAILABLE = False
@@ -294,10 +320,13 @@ class Live2DRenderer:
             return
 
         try:
-            # 设置背景清除颜色并手动清除
+            # 设置背景清除颜色并手动清除。
+            # 清屏色跟随当前主题 —— 写死 #111111 会让两套主题下都出现一块突兀黑底。
+            # 莱茵（纸色）用纸面底，少前（深色）用面板底。
             if bg_alpha is not None:
                 from OpenGL.GL import glClearColor, glClear, GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT
-                glClearColor(17/255.0, 17/255.0, 17/255.0, bg_alpha / 255.0)
+                cr, cg, cb, ca = _clear_rgba(bg_alpha)
+                glClearColor(cr, cg, cb, ca)
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
             else:
                 live2d.clearBuffer()

@@ -1,8 +1,7 @@
-from system.config import config
-import os
-from system.config import config, logger
+from core.system.config import config
+from core.system.config import logger, get_chat_font
 from . import chat
-from nagaagent_core.vendors.PyQt5.QtWidgets import QWidget
+from PyQt5.QtWidgets import QWidget
 
 class SettingTool():
     def __init__(self, window):
@@ -46,7 +45,7 @@ class SettingTool():
         """)
 
         # 更新输入框背景 #
-        fontfam, fontsize = 'Lucida Console', 16
+        fontfam, fontsize = get_chat_font()
         self.window.input.setStyleSheet(f"""
             QTextEdit {{
                 background: rgba(17,17,17,{alpha_px});

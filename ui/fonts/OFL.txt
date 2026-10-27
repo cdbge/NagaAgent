@@ -1,0 +1,21 @@
+Bundled fonts and their licenses
+================================
+
+Montserrat (Regular / Medium / Bold)
+  Copyright (c) 2011 The Montserrat Project Authors
+  https://github.com/JulietaUla/Montserrat
+  License: SIL Open Font License, Version 1.1
+  Full text: https://scripts.sil.org/OFL
+
+JetBrains Mono
+  Copyright (c) 2020 The JetBrains Mono Project Authors
+  https://github.com/JetBrains/JetBrainsMono
+  License: SIL Open Font License, Version 1.1
+  Full text: https://scripts.sil.org/OFL
+
+Both fonts permit redistribution and embedding in software under the OFL,
+provided the license notice is retained (this file) and the fonts are not
+sold on their own.
+
+Chinese text uses the system font (Microsoft YaHei UI / PingFang SC /
+Noto Sans CJK), which is not bundled here.

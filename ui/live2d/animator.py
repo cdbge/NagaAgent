@@ -9,7 +9,7 @@ import time
 import math
 import random
 import logging
-from typing import Optional, Dict
+from typing import Dict
 
 logger = logging.getLogger("live2d.animator")
 
@@ -133,7 +133,13 @@ class LipSyncAnimator:
     """嘴部同步动画器 - 基于音频音量驱动，支持音素识别和情感表情"""
     
     def __init__(self):
-        """初始化嘴部同步"""
+        """初始化嘴部同步。
+
+        参数默认值取自 config.live2d 的 lip_sync_* 配置项（原先这些配置项
+        只声明、从不读取，而这里的数值与配置默认值完全一致 —— 说明本就是
+        为驱动本类而设计，只是接线遗漏）。读取失败时回退到内置默认值，
+        保证动画不会因为配置问题而不可用。
+        """
         self.current_volume = 0.0  # 当前音量 (0.0-1.0)
         self.target_mouth_open = 0.0  # 目标嘴部张开度
         self.current_mouth_open = 0.0  # 当前嘴部张开度
@@ -145,10 +151,30 @@ class LipSyncAnimator:
         self.current_eye_brow = 0.0  # 当前眉毛位置
         self.target_eye_wide = 0.0  # 目标眼睛睁大度
         self.current_eye_wide = 0.0  # 当前眼睛睁大度
+
+        # 可配置项（默认值与 config 默认值一致，配置读取失败时用这些）
         self.smooth_factor = 0.3  # 平滑系数
         self.form_smooth_factor = 0.25  # 嘴形平滑系数（稍慢以避免抖动）
         self.volume_threshold = 0.01  # 音量阈值（低于此值视为静音）
         self.volume_scale = 1.5  # 音量放大系数
+        self.enabled = True  # 是否启用嘴部同步
+
+        try:
+            from core.system.config import config as _cfg
+
+            live2d_cfg = getattr(_cfg, "live2d", None)
+            if live2d_cfg is not None:
+                self.enabled = bool(getattr(live2d_cfg, "lip_sync_enabled", True))
+                self.smooth_factor = float(
+                    getattr(live2d_cfg, "lip_sync_smooth_factor", self.smooth_factor))
+                self.volume_scale = float(
+                    getattr(live2d_cfg, "lip_sync_volume_scale", self.volume_scale))
+                self.volume_threshold = float(
+                    getattr(live2d_cfg, "lip_sync_volume_threshold", self.volume_threshold))
+        except Exception:
+            # 配置不可用不影响嘴部动画，用内置默认值继续
+            pass
+
         self.is_speaking = False  # 是否正在说话
         
     def set_audio_volume(self, volume: float):
@@ -273,7 +299,9 @@ class Live2DAnimator:
             all_params.update(self.eye_tracking.update())
             all_params.update(self.breath.update())
             all_params.update(self.emotion.update())
-            all_params.update(self.lip_sync.update())  # 新增嘴部同步更新
+            # 嘴部同步：受 config.live2d.lip_sync_enabled 控制
+            if self.lip_sync and getattr(self.lip_sync, "enabled", True):
+                all_params.update(self.lip_sync.update())
 
             # 差异化更新 - 只应用变化的参数
             params_to_update = {}
@@ -375,7 +403,3 @@ class Live2DAnimator:
         logger.info("动画管理器已清理")
 
 
-def create_animator_from_config(renderer, config_manager=None):
-    """从配置创建动画管理器（简化版）"""
-    # 直接创建默认动画管理器
-    return Live2DAnimator(renderer)

@@ -32,21 +32,21 @@ nagaagent-core/
 *~
 .DS_Store
 
-# Logs
-logs/*.log
-logs/**/*.log
+# Logs（运行时数据统一放在 data/ 下）
+data/logs/*.log
+data/logs/**/*.log
 *.log
-logs/knowledge_graph/quintuples.json
-logs/knowledge_graph/graph.html
+data/logs/knowledge_graph/quintuples.json
+data/logs/knowledge_graph/graph.html
 
 # Audio temporary files
-logs/audio_temp/*.mp3
-logs/audio_temp/*.wav
-logs/audio_temp/*.m4a
-logs/audio_temp/*.opus
-logs/audio_temp/*.ogg
-logs/audio_temp/*.flac
-!logs/audio_temp/README.md
+data/logs/audio_temp/*.mp3
+data/logs/audio_temp/*.wav
+data/logs/audio_temp/*.m4a
+data/logs/audio_temp/*.opus
+data/logs/audio_temp/*.ogg
+data/logs/audio_temp/*.flac
+!data/logs/audio_temp/README.md
 
 # Session and history
 *.session
@@ -203,3 +203,15 @@ target/
 # IPython
 profile_default/
 ipython_config.py
+# ---- 本 fork 新增的忽略项 ----
+# 开发过程截图（36MB，不入库）
+docs/theme-preview/
+# 运行期产物
+data/graph.kuzu
+data/graph.kuzu.wal
+data/run.log
+data/crash.log
+data/app_stdout.log
+data/app_stderr.log
+# 备份文件
+*.persona-bak-*

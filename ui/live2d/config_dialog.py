@@ -23,14 +23,11 @@ except ImportError as e:
     logger.info("回退到经典配置对话框")
 
     # 回退到经典实现
-    from nagaagent_core.vendors.PyQt5.QtWidgets import (
+    from PyQt5.QtWidgets import (
         QDialog, QVBoxLayout, QHBoxLayout, QListWidget,
-        QListWidgetItem, QPushButton, QLabel, QCheckBox,
-        QDialogButtonBox, QSplitter, QGroupBox
+        QListWidgetItem, QPushButton, QLabel, QDialogButtonBox, QSplitter, QGroupBox
     )
-    from nagaagent_core.vendors.PyQt5.QtCore import Qt, pyqtSignal
-    import json
-    import os
+    from PyQt5.QtCore import Qt, pyqtSignal
 
 
     class Live2DConfigDialog(QDialog):
@@ -125,6 +122,8 @@ except ImportError as e:
             layout.addWidget(button_box)
 
             # 简化的样式
+            # QWidget/QDialog 子类不设这个属性，QSS 的 background 不会绘制
+            self.setAttribute(Qt.WA_StyledBackground, True)
             self.setStyleSheet("""
                 QDialog {
                     background: rgba(25, 25, 25, 180);

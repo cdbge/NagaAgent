@@ -3,16 +3,26 @@
 支持思考状态、加载动画和实时进度更新
 """
 
+import logging
 import os
-from nagaagent_core.vendors.PyQt5.QtWidgets import QWidget, QLabel, QProgressBar, QVBoxLayout, QHBoxLayout  # 统一入口 #
-from nagaagent_core.vendors.PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, pyqtSignal  # 统一入口 #
-from nagaagent_core.vendors.PyQt5.QtGui import QFont, QPixmap, QMovie  # 统一入口 #
+from PyQt5.QtWidgets import QWidget, QLabel, QProgressBar, QVBoxLayout, QHBoxLayout  # 统一入口 #
+from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, pyqtSignal  # 统一入口 #
+from PyQt5.QtGui import QMovie  # 统一入口 #
+
+logger = logging.getLogger(__name__)
 
 class ProgressWidget(QWidget):
+    #: 是否显示等待浮层。
+    #: 生成过程中这块浮层会挡住消息区、干扰观察入场动效，默认关闭；
+    #: 状态文字仍会更新，只是不弹窗。
+    ENABLED = False
+
     """进度显示组件"""
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        # QWidget 子类默认不画 QSS 背景，必须显式打开（且在 super() 之后）
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setFixedHeight(80)
         self.setup_ui()
         self.setup_animations()
@@ -48,7 +58,7 @@ class ProgressWidget(QWidget):
         else:
             # 如果没有gif，显示文字动画
             self.loading_label.setText("●")
-            self.loading_label.setStyleSheet("color: #64C8FF; font-size: 16pt;")
+            self.loading_label.setObjectName("LoadingDot")
         
         top_layout.addWidget(self.loading_label)
         
@@ -69,21 +79,7 @@ class ProgressWidget(QWidget):
         
         # 进度条
         self.progress_bar = QProgressBar()
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 1px solid rgba(100, 200, 255, 150);
-                border-radius: 8px;
-                background: rgba(50, 50, 50, 150);
-                text-align: center;
-                color: white;
-                font: 10pt 'Lucida Console';
-            }
-            QProgressBar::chunk {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #64C8FF, stop:1 #32A4FF);
-                border-radius: 8px;
-            }
-        """)
+        self.apply_theme_style()
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
@@ -92,6 +88,52 @@ class ProgressWidget(QWidget):
         # 默认隐藏
         self.hide()
         
+    def apply_theme_style(self):
+        """按当前主题刷新进度组件。
+
+        原来写死 `#64C8FF` 亮蓝，在少女前线/莱茵两套主题下都很跳。
+        """
+        try:
+            from ui.styles.tokens import get_theme
+
+            t = get_theme()
+            bar_bg = t.panel_3 if t.is_light else t.panel_2
+            try:
+                self.status_label.setStyleSheet(
+                    f"color: {t.accent}; background: transparent;"
+                    f"font-family: {t.font_mono}; font-size: 10pt;"
+                )
+            except Exception:
+                pass
+            try:
+                self.loading_label.setStyleSheet(
+                    f"color: {t.accent}; font-size: 16pt;"
+                )
+            except Exception:
+                pass
+            try:
+                self.progress_bar.setStyleSheet(
+                    f"""
+                    QProgressBar {{
+                        border: {t.border_width}px solid {t.border};
+                        border-radius: {t.radius_sm}px;
+                        background: {bar_bg};
+                        text-align: center;
+                        color: {t.text_dim};
+                        font-family: {t.font_mono};
+                        font-size: 8pt;
+                    }}
+                    QProgressBar::chunk {{
+                        background: {t.accent};
+                        border-radius: {t.radius_sm}px;
+                    }}
+                    """
+                )
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.debug(f"[进度] 主题样式失败: {exc}")
+
     def setup_animations(self):
         """设置动画效果"""
         # 淡入淡出动画
@@ -106,8 +148,11 @@ class ProgressWidget(QWidget):
         self.pulse_index = 0
         
     def start_loading(self, status="正在思考..."):
-        """开始加载动画"""
+        """开始加载动画（ENABLED=False 时只更新文字，不显示浮层）。"""
         self.status_label.setText(status)
+        if not getattr(self, "ENABLED", True):
+            self.hide()
+            return
         self.progress_bar.setValue(0)
         
         # 确保组件状态正确
@@ -180,7 +225,7 @@ class EnhancedProgressWidget(ProgressWidget):
         
     def add_cancel_button(self):
         """添加取消按钮"""
-        from nagaagent_core.vendors.PyQt5.QtWidgets import QPushButton  # 统一入口 #
+        from PyQt5.QtWidgets import QPushButton  # 统一入口 #
         
         # 在顶部布局添加取消按钮
         top_layout = self.layout().itemAt(0).layout()
@@ -208,7 +253,11 @@ class EnhancedProgressWidget(ProgressWidget):
         top_layout.addWidget(self.cancel_btn)
         
     def set_thinking_mode(self):
-        """设置思考模式"""
+        """设置思考模式（浮层已停用）。"""
+        if not getattr(self, "ENABLED", True):
+            self.status_label.setText("正在深度思考...")
+            self.hide()
+            return
         self.start_loading("正在深度思考...", show_cancel=True)
         # 思考模式使用不确定进度条
         self.progress_bar.setRange(0, 0)
@@ -217,7 +266,11 @@ class EnhancedProgressWidget(ProgressWidget):
         self.setWindowOpacity(1.0)
         
     def set_generating_mode(self):
-        """设置生成模式"""
+        """设置生成模式（浮层已停用）。"""
+        if not getattr(self, "ENABLED", True):
+            self.status_label.setText("正在生成回复...")
+            self.hide()
+            return
         self.update_progress(0, "正在生成回复...")
         self.progress_bar.setRange(0, 100)
         

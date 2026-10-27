@@ -1,375 +1,338 @@
 # NagaAgent
 
-[简体中文](README.md)|[繁體中文](README_tw.md)|[English](README_en.md)
+[简体中文](README.md)|[繁體中文](README_zh-Hant.md)|[English](README_en.md)
 
 ![NagaAgent Logo](https://img.shields.io/badge/NagaAgent-4.0-blue?style=for-the-badge&logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python)
-![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=for-the-badge)
-
-![Star History](https://img.shields.io/github/stars/Xxiii8322766509/NagaAgent?style=social)![Forks](https://img.shields.io/github/forks/Xxiii8322766509/NagaAgent?style=social)![Issues](https://img.shields.io/github/issues/Xxiii8322766509/NagaAgent)![Pull Requests](https://img.shields.io/github/issues-pr/Xxiii8322766509/NagaAgent)
 ![UI Preview](ui/img/README.jpg)
+
 ---
 
-## [Get Tutorial Videos and One-Click Runner Package Here](https://www.pylindex.top/naga)
+> ## About this repository
+>
+> This is a **fork** of [**RTGS2017/NagaAgent**](https://github.com/RTGS2017/NagaAgent),
+> not the upstream official repository. Original copyright belongs to the author
+> **柏斯阔落 (BaSiKuoLuo)**, licensed under the [NagaAgent License](LICENSE).
+>
+> **What this fork changes** (not in upstream): UI and architecture refactor.
+>
+> | Area | Change |
+> |---|---|
+> | Theming | `ui/styles/tokens.py` centralises every colour; two themes — Girls' Frontline Tactical (dark) / Rhine Lab Archive (light) |
+> | Settings | Rewritten declaratively (`ui/pages/settings/`): one line in `schema.py` = one setting, the UI builds itself |
+> | Chat controller | A 967-line god object split into 3 mixins (list / stream / emotion) + an orchestrating class |
+> | Visuals | Header, footer, message cards and the Live2D config dialog all redrawn, squared-off design |
+> | Engineering | `scripts/audit.py` project health check, `faulthandler` crash logs, ports moved from 8000s to 18000s |
+>
+> **Syncing upstream**:
+> ```bash
+> git remote add upstream https://github.com/RTGS2017/NagaAgent.git
+> git fetch upstream && git merge upstream/main
+> ```
+>
+> Changes are concentrated in `ui/` plus a little `core/`; merge conflicts will mostly be in `ui/`.
 
+> **This is a developer tool.** You need Python 3.11 and basic command-line skills.
+> There is no graphical installer or bundled all-in-one package ~~(I'll get to it when I have time).~~
+
+## Contents
+
+- [Introduction](#introduction)
+- [Architecture](#architecture)
+  - [Services and Ports](#services-and-ports)
+  - [Chat and Tool Calling](#chat-and-tool-calling)
+  - [Runtime Diagnostics](#runtime-diagnostics)
+- [Deployment and Running](#deployment-and-running)
+  - [Requirements](#requirements)
+  - [1. Install Dependencies](#1-install-dependencies)
+  - [2. Configuration](#2-configuration)
+  - [3. Start](#3-start)
+- [Troubleshooting](#troubleshooting)
+  - [Port unavailable even though netstat shows nothing](#port-unavailable-even-though-netstat-shows-nothing)
+- [Dependencies](#dependencies)
+- [License](#license)
+- [Contributing](#contributing)
 
 ## Introduction
 
-NagaAgent is a feature-rich intelligent conversational assistant system with the following special features:
+NagaAgent is a PyQt5 desktop AI assistant built around four local services and a set of MCP tools:
 
-### 🎯 Core Features
-- **Intelligent Dialogue System**: Supports streaming conversations and tool-calling loops
-- **Multi-Agent Collaboration**: Intelligent task scheduling based on game theory
-- **Knowledge Graph Memory**: GRAG system supports long-term memory and intelligent retrieval
-- **Full Voice Interaction**: Real-time voice input and output processing
-- **Modern Interface**: PyQt5 GUI + Live2D virtual avatar
-- **System Tray Integration**: Background operation and quick actions
+- **Streaming chat**: streaming LLM output, with the **model calling tools on its own** (native function calling)
+- **MCP tool system**: declarative registration via `agent-manifest.json`, scheduled in-process
+- **Knowledge graph memory (GRAG)**: quintuple extraction and retrieval; Kuzu embedded backend by default, no extra service required
+- **Voice**: speech input and TTS output
+- **Desktop experience**: Live2D avatar, system tray, settings panel
 
-### 🛠️ Technical Architecture
+## Architecture
 
-#### System Overall Architecture
 ```mermaid
 graph TB
-    %% UI Layer
-    subgraph "UI Layer"
-        UI[PyQt5 GUI Interface]
-        Live2D[Live2D Virtual Avatar]
-        Tray[System Tray]
-        Chat[Chat Interface]
+    subgraph UI["UI Layer (PyQt5, main process)"]
+        Main["main.py<br/>ServiceManager"]
+        Chat["Chat window"]
+        Live2D["Live2D"]
+        Tray["System tray"]
+        Settings["Settings panel"]
     end
 
-    %% Core Services
-    subgraph "Core Services"
-        API[API Server<br/>:8000]
-        Agent[Agent Server<br/>:8001]
-        MCP[MCP Server<br/>:8003]
-        TTS[TTS Server<br/>:5048]
+    subgraph Services["Local services (started as threads by main.py)"]
+        API["API server :18000<br/>servers/apiserver/"]
+        Agent["Agent server :18001<br/>servers/agentserver/"]
+        MCP["MCP server :18003<br/>servers/mcpserver/"]
+        TTS["TTS server :15048<br/>core/voice/output/"]
     end
 
-    %% Business Logic
-    subgraph "Business Logic Layer"
-        Game[Game Theory System<br/>Multi-Agent Collaboration]
-        Memory[GRAG Memory System<br/>Knowledge Graph]
-        Voice[Voice Processing System<br/>Real-time Voice Interaction]
-        Tools[Tool Calling System<br/>MCP Protocol]
+    subgraph Core["Core modules"]
+        Config["core/system/config.py<br/>single source of config and ports"]
+        Parsing["core/system/naga_parsing.py<br/>tool-call parsing"]
+        Registry["servers/mcpserver/mcp_registry.py<br/>manifest scan and registration"]
+        Memory["core/summer_memory/<br/>GRAG memory"]
     end
 
-    %% Data Storage
-    subgraph "Data Storage Layer"
-        Neo4j[(Neo4j Graph Database<br/>Knowledge Graph Storage)]
-        Files[File System<br/>Config/Logs/Cache]
-        MemoryCache[In-memory Cache<br/>Session State]
+    subgraph Ext["External dependencies"]
+        LLM["LLM API<br/>OpenAI-compatible"]
+        Neo4j[("Neo4j<br/>optional")]
+        Tool["MCP Agent<br/>servers/mcpserver/agent_*"]
     end
 
-    %% External Services
-    subgraph "External Services Layer"
-        LLM[LLM Providers<br/>OpenAI/Qwen, etc.]
-        Portal[NagaPortal<br/>Portal Service]
-        MQTT[IoT Devices<br/>MQTT Communication]
-        Web[Web Crawler<br/>Online Search]
-    end
-
-    %% Connections
-    UI --> API
-    UI --> Agent
-    UI --> MCP
-    UI --> TTS
-
-    API --> Game
-    API --> Memory
-    API --> Voice
-    API --> Tools
-
-    Agent --> Game
-    Agent --> Tools
-
-    MCP --> Tools
-    MCP --> Portal
-    MCP --> MQTT
-    MCP --> Web
-
-    TTS --> Voice
-
-    Game --> Memory
+    Main --> Chat
+    Chat --> Settings
+    Main --> API
+    Main --> Agent
+    Main --> MCP
+    Main --> TTS
+    Config --- Services
+    Registry --> Tool
+    MCP --> Registry
     Memory --> Neo4j
-    Voice --> LLM
-    Tools --> LLM
-
-    API --> MemoryCache
-    Agent --> MemoryCache
-    MCP --> MemoryCache
-
-    %% Styles
-    classDef uiLayer fill:#e1f5fe
-    classDef coreLayer fill:#f3e5f5
-    classDef businessLayer fill:#e8f5e8
-    classDef dataLayer fill:#fff3e0
-    classDef externalLayer fill:#fce4ec
-
-    class UI,Live2D,Tray,Chat uiLayer
-    class API,Agent,MCP,TTS coreLayer
-    class Game,Memory,Voice,Tools businessLayer
-    class Neo4j,Files,MemoryCache dataLayer
-    class LLM,Portal,MQTT,Web externalLayer
-
+    Chat --> LLM
+    TTS --> Chat
 ```
 
-#### Core Characteristics
-- **Multi-Service Parallelism**: API Server (8000), Agent Server (8001), MCP Server (8003), TTS Server (5048)
-- **Modular Design**: Each service runs independently and supports hot-swapping
-- **Configuration-Driven**: Real-time configuration hot-reloading without restart
-- **Cross-Platform Support**: Windows, macOS, Linux
+### Services and Ports
 
-### 🔧 Tech Stack
+Ports **all come from `config.json`**, resolved centrally by `core/system/config.py`:
 
-#### Tech Stack Architecture
-```mermaid
-graph TB
-    %% Frontend Stack
-    subgraph "Frontend Stack"
-        PyQt5[PyQt5<br/>GUI Framework]
-        Live2D[Live2D<br/>Virtual Avatar]
-        QSS[QSS<br/>Stylesheet]
-    end
+| Service | Port | Config section | Code |
+|---|---|---|---|
+| API server | 18000 | `api_server.port` | `servers/apiserver/api_server.py` |
+| Agent server | 18001 | `agentserver.port` | `servers/agentserver/agent_server.py` |
+| MCP server | 18003 | `mcpserver.port` | `servers/mcpserver/mcp_server.py` |
+| TTS server | 15048 | `tts.port` | `core/voice/output/server.py` |
+| ASR server | 15060 | `asr.port` | voice input |
 
-    %% Backend Stack
-    subgraph "Backend Stack"
-        FastAPI[FastAPI<br/>Web Framework]
-        Uvicorn[Uvicorn<br/>ASGI Server]
-        AsyncIO[AsyncIO<br/>Asynchronous Programming]
-    end
-
-    %% Database Stack
-    subgraph "Database Stack"
-        Neo4j[Neo4j<br/>Graph Database]
-        GRAG[GRAG<br/>Knowledge Graph]
-        Memory[In-memory Cache<br/>Session Management]
-    end
-
-    %% AI Stack
-    subgraph "AI Stack"
-        OpenAI[OpenAI API<br/>GPT Models]
-        Qwen[Qwen<br/>Multimodal Models]
-        MCP[MCP Protocol<br/>Tool Calling]
-    end
-
-    %% Voice Stack
-    subgraph "Voice Stack"
-        ASR[Speech Recognition<br/>ASR]
-        TTS[Text-to-Speech<br/>TTS]
-        Realtime[Real-time Voice<br/>WebRTC]
-    end
-
-    %% Network Stack
-    subgraph "Network Stack"
-        HTTP[HTTP/HTTPS<br/>RESTful API]
-        WebSocket[WebSocket<br/>Real-time Communication]
-        MQTT[MQTT<br/>IoT Protocol]
-    end
-
-    %% Styles
-    classDef frontend fill:#e3f2fd
-    classDef backend fill:#f1f8e9
-    classDef database fill:#fff3e0
-    classDef ai fill:#fce4ec
-    classDef voice fill:#e8f5e8
-    classDef network fill:#f3e5f5
-
-    class PyQt5,Live2D,QSS frontend
-    class FastAPI,Uvicorn,AsyncIO backend
-    class Neo4j,GRAG,Memory database
-    class OpenAI,Qwen,MCP ai
-    class ASR,TTS,Realtime voice
-    class HTTP,WebSocket,MQTT network
-```
-
-#### Core Technologies
-- **Python 3.11** + PyQt5 + FastAPI
-- **Neo4j Graph Database** + GRAG Knowledge Graph
-- **MCP (Model Context Protocol)** for Tool Calling
-- **OpenAI-Compatible API** + Support for multiple LLM providers
-
+> Read them with `system.config.get_current_port("<name>")`; the defaults are only a fallback.
 
 ---
 
-## Deployment and Running Tutorial
+### Chat and Tool Calling
 
-### System Requirements
-- Python 3.11
-- Optional: `uv` tool (for faster dependency installation, without needing a specific Python version)
-
-### Quick Start
-
->  If you encounter difficulties with deployment, please refer to the video tutorial or download the one-click runner package.
-
-#### 1. Install Dependencies
-##### Using the setup script
-
-```bash
-# Optional: Install uv first
-pip install uv
-
-# Use setup.py to initialize automatically
-python setup.py
-
-# Or use setup.sh (Linux/macOS)
-./setup.sh
-
-# Or use setup.bat (Windows)
-setup.bat
+```
+User message -> call model with tool definitions
+              |- no tool_calls -> done, stream the content back
+              |- tool_calls    -> execute -> feed results back -> call model again (max 5 rounds)
 ```
 
-The initialization script will automatically:
-- Check the Python version
-- Create a virtual environment
-- Install required packages
-- Copy the configuration file template
-- Open the configuration file for editing
-</details>
+Tool definitions are generated by `servers/apiserver/tool_schemas.py` from
+`servers/mcpserver/*/agent-manifest.json`.
 
-<details><summary>Manual Deployment</summary>
+| Capability | Switch | Default |
+|---|---|---|
+| Model calls tools on its own | `api.function_calling_enabled` | on |
+| Long-conversation compression | automatic (over 100k tokens) | on |
+| Tool routing | `api.intent_router_enabled` | off |
+
+Falls back to single-round streaming when disabled, when no MCP service is
+available, or when the tool table fails to build.
+
+### Runtime Diagnostics
+
+`system_checker.py` checks whether it can start; `health_check.py` checks whether
+the services are reachable.
 
 ```bash
-# Without uv
-python -m venv .venv
+python -m core.system.health_check      # exit code 1 when not all green
+curl http://127.0.0.1:18000/health/full  # 2-3 seconds per call
+```
 
-# Linux/macOS
-source .venv/bin/activate
-# Windows
-.\.venv\Scripts\activate
+Also runs once in a background thread 6 seconds after startup; logs only.
 
-pip install -r requirements.txt
+## Deployment and Running
 
-# With uv
+### Requirements
+
+- Python **3.11** (`>=3.11,<3.12`)
+- [uv](https://docs.astral.sh/uv/) recommended for dependency management
+
+### 1. Install Dependencies
+
+```bash
 uv sync
 ```
-</details>
 
-#### 2. Configure LLM API
-Edit the `config.json` file and configure your LLM API information:
+Or use the setup script / manual install:
+
+```bash
+python scripts/setup.py         # cross-platform; scripts\setup.bat on Windows
+python -m venv .venv            # manual
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+> Behind a slow network, use a mirror:
+> `set UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple`
+
+> **Browser-based agents need an extra Chromium download** (~150 MB):
+> `uv run playwright install chromium`
+> Skipping this does not block the main app — only web parsing / browser agents are unavailable.
+
+### 2. Configuration
+
+Copy the template and fill in your API key:
+
+```bash
+cp config.json.example config.json      # Windows: copy config.json.example config.json
+```
+
 ```json
 {
   "api": {
-    "api_key": "your_api_key",
-    "base_url": "model_provider_openai_api_endpoint",
-    "model": "model_name"
+    "api_key": "your-api-key",
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-flash"
   }
 }
 ```
 
-<details><summary>Optional Configuration</summary>
+**Every other option is documented inline in the template.** The most commonly changed ones:
 
-#### Enable Knowledge Graph Memory
+| Option | Description |
+|---|---|
+| `grag.graph_backend` | `kuzu` (default, no dependencies) / `neo4j` / `sqlite` |
+| `live2d.enabled` | Show the Live2D avatar |
+| `system.voice_enabled` | Enable voice playback |
+| `ui.font_family` | Chat font (must be installed on your system) |
 
-Install `neo4j` using `docker` or install `Neo4j Desktop`, then configure the Neo4j connection parameters in `config.json`:
+You can also change these in the in-app **settings panel**; saving writes back to `config.json`.
+
+> ⚠️ Kuzu is a **single-writer** database: **never run two NagaAgent instances at once**.
+
+> Knowledge graph data lives in `data/graph.kuzu` by default. **Delete that file to clear all memory.**
+> Change `grag.kuzu_db_path` to store it elsewhere.
+
+> ⚠️ Never share or commit a `config.json` that contains your API key — it is equivalent to your account credentials
+
+#### Using a standalone Neo4j (optional)
+
+If you already run a Neo4j instance:
+
 ```json
 {
   "grag": {
     "enabled": true,
+    "graph_backend": "neo4j",
     "neo4j_uri": "neo4j://127.0.0.1:7687",
     "neo4j_user": "neo4j",
-    "neo4j_password": "the_password_you_set_during_neo4j_installation"
+    "neo4j_password": "your-password"
   }
 }
 ```
 
-#### Enable Voice Output Function
-```json
-{
-  "system": {
-    "voice_enabled": true
-  },
-  "tts": {
-    "port": 5048
-  }
-}
-```
+### 3. Start
 
-#### Live2D Related Configuration
-
-```json5
-  "live2d": {
-    "enabled": false, // Whether to enable Live2D
-    "model_path": "ui/live2d/live2d_models/characters/llny/mianfeimox/llny.model3.json", // Live2D model path
-    "fallback_image": "ui/img/standby.png", // Fallback image
-    "auto_switch": true, // Whether to switch automatically
-    "animation_enabled": true, // Whether to enable animation
-    "touch_interaction": true // Whether to enable touch interaction
-  },
-  ```
-
-> For other configuration options, please refer to the comments in the file.
-
-</details>
-
-#### 3. Start the Application
 ```bash
-# Using the start script
-./start.sh          # Linux/macOS
-start.bat           # Windows
-
-
-# Or run the py file directly
-# Linux/macOS
-source .venv/bin/activate
-# Windows
-.\.venv\Scripts\activate
 python main.py
-
-# uv
-uv run main.py
 ```
 
+Or use the start script: `scripts\start.bat` (Windows) / `./scripts/start.sh` (Linux / macOS).
 
-<details><summary>Troubleshooting</summary>
+The four services listen on ports 18000 / 18001 / 18003 / 15048 by default; change them in the matching `config.json` sections.
 
-1.  **Incompatible Python Version**: Ensure you are using Python 3.11
-2.  **Port in Use**: Check if ports 8000, 8001, 8003, and 5048 are available
-3.  **Neo4j Connection Failed**: Make sure the Neo4j service is running
-4.  **JSON parsing error when checking Neo4j connection**: Exit and restart the program
-5.  **Unknown Errors**: Please create an issue to provide feedback
-
-</details>
-
-<details><summary>Environment Check</summary>
+#### Command-line options
 
 ```bash
-# Run system environment check
-python main.py --check-env --force-check
-
-# Quick check
-python main.py --quick-check
+python main.py --check-env --force-check   # full environment check
+python main.py --quick-check               # quick check
+python main.py --check-api                 # validate API key / endpoint / model only
 ```
 
-</details>
+---
 
+## Troubleshooting
+
+**Run the diagnostic first.** It probes every service port, checks dependencies
+and directory writability, and pinpoints most "it starts but feature X does not work" cases:
+
+```bash
+python -m core.system.health_check        # or curl http://127.0.0.1:18000/health/full
+```
+
+| Symptom | Fix |
+|---|---|
+| Wrong Python version | Make sure you use Python 3.11 |
+| API key invalid (401) | Update `api.api_key` in `config.json`; verify with `python main.py --check-api` |
+| Port already in use | Check 18000 / 18001 / 18003 / 15048, or change the ports in `config.json` |
+| "Kuzu database is locked" | Make sure no second NagaAgent instance is running |
+| Memory works intermittently | See the previous row; or set `grag.graph_backend` to `sqlite` |
+| Neo4j connection failed | Only relevant when `graph_backend` is `neo4j`; switch back to `kuzu` to avoid the service |
+| Browser agent unavailable | Requires an extra SDK and Chromium — see Dependencies below |
+| **Port reported in use but `netstat` shows nothing** | Windows reserved port ranges — see below |
+
+---
+
+### Port unavailable even though `netstat` shows nothing
+
+On Windows, the Hyper-V / WSL / Docker `winnat` service **reserves random port
+ranges**. A port inside a reserved range **cannot be bound** by a normal
+application: it fails with `WinError 10013`, and `netstat` shows no socket at
+all — so the port looks free but the service will not start. The reserved
+ranges are re-randomised on every reboot, which is why this problem is
+**intermittent**.
+
+Inspect the current ranges:
+
+```bat
+netsh int ipv4 show excludedportrange protocol=tcp
+```
+
+Temporary fix (run as administrator):
+
+```bat
+net stop winnat
+:: start NagaAgent
+net start winnat
+
+:: or permanently exclude the ports from dynamic allocation
+netsh int ipv4 add excludedportrange protocol=tcp startport=15048 numberofports=1 store=persistent
+```
+
+## Dependencies
+
+All dependencies are declared directly in `pyproject.toml` / `requirements.txt`:
+
+| Category | Packages |
+|---|---|
+| Desktop UI | `PyQt5` |
+| Model access | `openai`, `requests`, `aiohttp` |
+| Service framework | `fastapi`, `uvicorn`, `mcp` |
+| Config validation | `pydantic`, `PyYAML` |
+| Graph storage | `kuzu` (default); `py2neo` / `neo4j` (neo4j backend only) |
+| Voice / Live2D | `live2d-py`, `sounddevice`, `onnxruntime` |
+| Browser automation | `playwright`, `crawl4ai` |
+
+> **The full browser agent needs an extra install**: `agent_playwright_master/playwright.py`
+> depends on the OpenAI Agents SDK (`openai-agents`), which requires `openai>=3.0.0` and
+> therefore conflicts with `langchain-openai`'s `openai<3.0.0`. It is not a default dependency.
+> Install it separately if needed, then run `playwright install chromium`.
+
+---
 
 ## License
 
 [NagaAgent License](LICENSE)
 
-
 ## Contributing
 
-Issues and Pull Requests are welcome!
-
-<details><summary>Build a One-Click Runner Package</summary>
-
-```bash
-python build.py
-```
-The built files are located in the `dist/` directory.
-
-</details>
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Xxiii8322766509/NagaAgent&type=date&legend=top-left)](https://www.star-history.com/#Xxiii8322766509/NagaAgent&type=date&legend=top-left)
-
-<div align="center">
-
-**Thank you to all developers who have contributed to this project**
-
-**⭐ If this project is helpful to you, please consider giving us a Star**
-
-</div>
+Issues and pull requests are welcome.

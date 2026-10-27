@@ -1,14 +1,14 @@
 import os
 import json
-from nagaagent_core.vendors.PyQt5.QtWidgets import (
+from PyQt5.QtWidgets import (
     QWidget, QStackedLayout, QLabel, QSizePolicy, QPushButton,
-    QVBoxLayout, QScrollArea, QHBoxLayout
+    QVBoxLayout
 )  # 统一入口 #
-from nagaagent_core.vendors.PyQt5.QtCore import Qt, QTimer, pyqtSignal, QPropertyAnimation, QRect  # 统一入口 #
-from nagaagent_core.vendors.PyQt5.QtGui import QPixmap, QPainter, QColor, QBrush, QPen, QIcon  # 统一入口 #
-from nagaagent_core.vendors.PyQt5.QtCore import QSize  # 统一入口 #
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal  # 统一入口 #
+from PyQt5.QtGui import QPixmap, QPainter, QColor, QBrush, QPen, QIcon  # 统一入口 #
+from PyQt5.QtCore import QSize  # 统一入口 #
 
-from system.config import config, logger
+from core.system.config import logger
 # 导入独立的Live2D模块
 try:
     from ..live2d import Live2DWidget
@@ -32,7 +32,7 @@ class Live2DSideWidget(QWidget):
         try:
             import sys, os
             sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + '/..'))
-            from system.config import config
+            from core.system.config import config
             # 使用配置中的透明度，转换为0-255范围
             self.bg_alpha = int(config.ui.bg_alpha * 255)  # 背景透明度
             self.border_alpha = 50  # 边框透明度（保持固定值）
@@ -195,13 +195,9 @@ class Live2DSideWidget(QWidget):
 
         # 创建动作列表面板
         self.actions_panel = QWidget(self)
-        self.actions_panel.setStyleSheet("""
-            QWidget {
-                background-color: rgba(50, 50, 50, 200);
-                border: 1px solid rgba(255, 255, 255, 100);
-                border-radius: 5px;
-            }
-        """)
+        self.actions_panel.setObjectName("Live2DActionsPanel")
+        self.actions_panel.setAttribute(Qt.WA_StyledBackground, True)
+        self._apply_actions_panel_style()
         self.actions_panel.hide()  # 默认隐藏
 
         # 动作列表布局
@@ -328,7 +324,7 @@ class Live2DSideWidget(QWidget):
 
         if self.display_mode == 'image':
             # 检查主配置文件中的Live2D enabled参数
-            from system.config import config
+            from core.system.config import config
             if not config.live2d.enabled:
                 print("Live2D功能已在配置中禁用，无法切换")
                 return
@@ -444,6 +440,23 @@ class Live2DSideWidget(QWidget):
         except Exception as e:
             logger.error(f"加载模型变换配置失败: {e}")
 
+    def _apply_actions_panel_style(self):
+        """动作面板按当前主题配色（原来写死深灰 + 白边，纸色主题下很突兀）。"""
+        try:
+            from ui.styles.tokens import get_theme
+
+            t = get_theme()
+            bg = t.panel if t.is_light else t.panel_2
+            self.actions_panel.setStyleSheet(
+                "QWidget#Live2DActionsPanel {"
+                f"  background: {bg};"
+                f"  border: {t.border_width}px solid {t.border};"
+                f"  border-radius: {t.radius_md}px;"
+                "}"
+            )
+        except Exception as exc:
+            logger.debug(f"[Live2D] 动作面板样式失败: {exc}")
+
     def set_background_alpha(self, alpha):
         """设置背景透明度"""
         self.bg_alpha = alpha
@@ -507,7 +520,7 @@ class Live2DSideWidget(QWidget):
                     self.expand_button.setAttribute(Qt.WA_TransparentForMouseEvents, False)
                     logger.debug(f"Live2D控制按钮状态检查 - config: {self.config_button.isVisible()}, expand: {self.expand_button.isVisible()}, expand_enabled: {self.expand_button.isEnabled()}")  # 改为DEBUG级别，减少启动时日志噪音
 
-                from nagaagent_core.vendors.PyQt5.QtCore import QTimer as QT
+                from PyQt5.QtCore import QTimer as QT
                 QT.singleShot(100, ensure_buttons_visible)
 
                 # 确保按钮位置正确
@@ -572,7 +585,7 @@ class Live2DSideWidget(QWidget):
             self.load_image(self.fallback_image_path)
         else:
             # 使用默认图片
-            default_image = os.path.join(os.path.dirname(__file__), 'img/standby.png')
+            default_image = os.path.join(os.path.dirname(__file__), '../img/standby.png')
             if os.path.exists(default_image):
                 self.load_image(default_image)
 
@@ -675,7 +688,7 @@ class Live2DSideWidget(QWidget):
 
             # 动作面板（在展开按钮下面）
             if hasattr(self, 'actions_panel'):
-                self.actions_panel.setFixedWidth(150)
+                # 宽度在 update_actions_panel 里按内容算（那时按钮才存在）
                 panel_x = self.width() - self.actions_panel.width() - 10
                 panel_y = self.expand_button.y() + self.expand_button.height() + 5
                 self.actions_panel.move(panel_x, panel_y)
@@ -805,7 +818,7 @@ class Live2DSideWidget(QWidget):
 
         # 映射坐标并创建新事件
         mapped_pos = self.live2d_widget.mapFromParent(event.pos())
-        from nagaagent_core.vendors.PyQt5.QtGui import QMouseEvent
+        from PyQt5.QtGui import QMouseEvent
         new_event = QMouseEvent(
             event.type(),
             mapped_pos,
@@ -859,7 +872,7 @@ class Live2DSideWidget(QWidget):
             # 将坐标映射到Live2D Widget
             mapped_pos = self.live2d_widget.mapFromParent(event.pos())
             # 创建新的事件传递给Live2D Widget
-            from nagaagent_core.vendors.PyQt5.QtGui import QWheelEvent
+            from PyQt5.QtGui import QWheelEvent
             new_event = QWheelEvent(
                 mapped_pos,
                 event.globalPos(),
@@ -959,25 +972,42 @@ class Live2DSideWidget(QWidget):
 
         # 添加动作按钮
         for i, action in enumerate(self.saved_actions):
-            btn_text = f"{action.get('icon', '')} {action.get('display', action.get('name'))}"
+            # 用编号替代 emoji：和配置弹窗的卡片编号一致，
+            # emoji 是彩色位图，跨系统渲染差异大且与主题不搭。
+            _name = action.get("display", action.get("name"))
+            btn_text = f"{i + 1:02d}  {_name}"
             logger.info(f"创建按钮 {i+1}: {btn_text}")
             btn = QPushButton(btn_text)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: rgba(80, 80, 80, 180);
-                    color: white;
-                    border: 1px solid rgba(255, 255, 255, 80);
-                    border-radius: 3px;
-                    padding: 5px;
-                    text-align: left;
-                }
-                QPushButton:hover {
-                    background-color: rgba(120, 120, 120, 200);
-                }
-                QPushButton:pressed {
-                    background-color: rgba(150, 150, 150, 220);
-                }
-            """)
+            btn.setCursor(Qt.PointingHandCursor)
+            # 主题化：跟随当前主题的面板色/描边/强调色。
+            # 原来写死深灰 + 白字，在纸色主题下是一列突兀的深色块。
+            try:
+                from ui.styles.tokens import get_theme
+
+                _t = get_theme()
+                _bg = _t.panel_2 if _t.is_light else _t.panel_3
+                btn.setStyleSheet(
+                    "QPushButton {"
+                    f"  background: {_bg};"
+                    f"  color: {_t.text};"
+                    f"  border: {_t.border_width}px solid {_t.border};"
+                    f"  border-radius: {_t.radius_sm}px;"
+                    "  padding: 6px 8px;"
+                    "  text-align: left;"
+                    f"  font-family: {_t.font_cn};"
+                    "  font-size: 9.5pt;"
+                    "}"
+                    "QPushButton:hover {"
+                    f"  color: {_t.accent};"
+                    f"  border: {_t.border_width}px solid {_t.accent};"
+                    "}"
+                    "QPushButton:pressed {"
+                    f"  background: {_t.accent};"
+                    f"  color: {_t.text_inv};"
+                    "}"
+                )
+            except Exception:
+                pass
 
             # 绑定动作触发
             action_name = action.get('name')
@@ -986,9 +1016,19 @@ class Live2DSideWidget(QWidget):
             self.actions_layout.addWidget(btn)
 
         # 更新面板大小
-        button_height = 35
+        button_height = 38
         panel_height = len(self.saved_actions) * button_height + 10
         self.actions_panel.setFixedHeight(panel_height)
+
+        # 宽度按最长条目估算 —— 固定宽度会把长名截断
+        try:
+            _pm = self.actions_panel.fontMetrics()
+            _btns = self.actions_panel.findChildren(type(self.reset_button))
+            _w = max((_pm.horizontalAdvance(b.text()) for b in _btns),
+                     default=0)
+            self.actions_panel.setFixedWidth(max(210, min(330, _w + 64)))
+        except Exception:
+            self.actions_panel.setFixedWidth(220)
         logger.info(f"动作面板高度设置为: {panel_height}px")
 
         # 更新面板位置

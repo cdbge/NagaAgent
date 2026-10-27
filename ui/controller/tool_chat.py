@@ -1,15 +1,58 @@
-from nagaagent_core.vendors.PyQt5.QtWidgets import QLabel
-from ..utils.response_util import extract_message
+from PyQt5.QtWidgets import QLabel
+from core.system.response_util import extract_message
 from ui.utils.message_renderer import MessageRenderer
 from ui.utils.simple_http_client import SimpleHttpClient, SimpleBatchClient
-from system.config import config, AI_NAME, logger
-from nagaagent_core.vendors.PyQt5.QtCore import QThread, QCoreApplication, Qt, QTimer, QMetaObject, QObject, pyqtSignal
+from core.system.config import config, AI_NAME, logger
+from PyQt5.QtCore import QThread, QCoreApplication, Qt, QTimer, QMetaObject, QObject, pyqtSignal
 import time
 from typing import Dict, Optional
 
 
-class ChatTool(QObject):
-    # 定义信号用于线程间通信
+
+
+def _plain_stream_html(text: str) -> str:
+    """流式阶段用的纯文本 HTML。
+
+    为什么流式阶段不做 Markdown：模型吐字是逐片段的，`**`、`###`、``` 这些
+    标记经常处于未闭合状态；每帧都重新解析会让同一段文字在"粗体/普通"、
+    "标题/正文"之间反复跳，布局跟着重排 —— 肉眼就是文字在上下抖。
+
+    所以流式期间只做 **转义 + 保留换行**，字体字号与最终渲染保持一致，
+    收尾时再整体走一次 Markdown。
+    """
+    import html as _html
+
+    try:
+        from ui.styles.tokens import get_theme
+
+        t = get_theme()
+        color = t.text
+        family = t.font_cn or "Microsoft YaHei UI"
+    except Exception:
+        color, family = "#EAEAEA", "Microsoft YaHei UI"
+
+    body = _html.escape(text).replace("\n", "<br>")
+    return (
+        f'<div style="color:{color}; font-family:{family}; '
+        f'font-size:13pt; line-height:1.4;">{body}</div>'
+    )
+
+from ui.pages.chat.mixins_emotion import EmotionMixin
+from ui.pages.chat.mixins_list import MessageListMixin
+from ui.pages.chat.mixins_stream import StreamMixin
+
+class ChatTool(MessageListMixin, StreamMixin, EmotionMixin, QObject):
+    """聊天主控制器：发送编排、工具调用回调、取消与客户端管理。
+
+    消息列表 / 流式打字机 / Live2D 表情 已按职责拆到同包的 mixin：
+        MessageListMixin  消息增删改、滚动、历史
+        StreamMixin       分片接收、打字机、收尾渲染
+        EmotionMixin      Live2D 表情联动
+    用 mixin 是为了这一轮不改调用方（window.chat_tool.xxx 全部不变）。
+    """
+
+    #: 工具调用产生的 AI 回复。工作线程不能直接碰 UI，
+    #: 通过信号切回主线程处理（见 _handle_tool_ai_response_safe）。
     tool_ai_response_received = pyqtSignal(str)
 
     def __init__(self, window):
@@ -35,6 +78,16 @@ class ChatTool(QObject):
         self.last_update_time = 0  # 上次UI更新时间（用于节流）
 
         # 打字机效果相关
+        # ---- 流式打字机：恒定节奏，无随机抖动（固定宽距）----
+        #: 恒定帧间隔（ms）。16ms ≈ 60fps，文字推进看起来是连续的
+        self.STREAM_TICK_MS = 16
+        #: 基线每帧推进字数（中英一致，不再按 ASCII 加压）
+        self.STREAM_CHARS_BASE = 1
+        #: 落后超过 N 字开始加速：每多 N 字多推 1 字
+        self.STREAM_CATCHUP_EVERY = 16
+        #: 单帧最多推进字数，防止积压时大段瞬移
+        self.STREAM_CATCHUP_MAX = 16
+
         self.stream_typewriter_buffer = ""
         self.stream_typewriter_index = 0
         self.stream_typewriter_timer: Optional[QTimer] = None
@@ -60,61 +113,6 @@ class ChatTool(QObject):
         window.input.setFixedHeight(min(max(60, h), 150))  # 增加最小高度，与字体大小匹配
         window.input_wrap.setFixedHeight(window.input.height())
 
-    def add_user_message(self, name, content, is_streaming=False):
-        window = self.window
-        """添加用户消息"""
-        msg = extract_message(content)
-        content_html = str(msg).replace('\n', '\n\n')#.replace('\n', '<br>')
-
-        # 生成消息ID
-        if not self.message_counter:
-            self.message_counter = 0
-        self.message_counter += 1
-        message_id = f"msg_{self.message_counter}"
-
-        # 初始化消息存储
-        if self._messages:
-            self._messages = {}
-
-        # 存储消息信息
-        self._messages[message_id] = {
-            'name': name,
-            'content': content_html,
-            'full_content': content,
-            'dialog_widget': None
-        }
-
-        # 使用消息渲染器创建对话框
-        if name == "系统":
-            message_dialog = MessageRenderer.create_system_message(name, content_html, window.chat_content)
-        else:
-            message_dialog = MessageRenderer.create_user_message(name, content_html, window.chat_content)
-
-        # 存储对话框引用
-        self._messages[message_id]['dialog_widget'] = message_dialog
-
-        # 先移除stretch
-        stretch_found = False
-        stretch_index = -1
-        for i in reversed(range(window.chat_layout.count())):
-            item = window.chat_layout.itemAt(i)
-            if item and not item.widget():  # 找到stretch
-                window.chat_layout.removeItem(item)
-                stretch_found = True
-                stretch_index = i
-                break
-
-        # 添加消息
-        window.chat_layout.addWidget(message_dialog)
-
-        # 重新添加stretch到最后
-        window.chat_layout.addStretch()
-
-        # 滚动到底部
-        self.smart_scroll_to_bottom()
-
-        return message_id
-
     def on_send(self):
         # 1. 获取并验证用户输入
         user_input = self.window.input.toPlainText().strip()
@@ -128,15 +126,15 @@ class ChatTool(QObject):
         self.add_user_message(config.ui.user_name, user_input)
         self.window.input.clear()
 
-        # 4. 根据模式分发请求（核心分支逻辑）
-        from .tool_game import game
-        if game.self_game_enabled:
-            self._send_self_game_request(user_input)
+        # 4. 根据模式分发请求
+        # 注：原先这里会根据 `game.self_game_enabled` 走"博弈论"非流式分支，
+        # 但服务端的博弈流程已随 game/ 模块移除、请求侧 use_self_game 恒为 false，
+        # 那个开关现在改为控制"后台意图分析"的启停，与请求路径无关。
+        # 因此这里只保留流式/非流式两种模式。
+        if self.streaming_mode:
+            self._send_stream_request(user_input)
         else:
-            if self.streaming_mode:
-                self._send_stream_request(user_input)
-            else:
-                self._send_non_stream_request(user_input)
+            self._send_non_stream_request(user_input)
 
     def _cleanup_all_states(self):
         """合并：清理打字机、消息ID、运行中任务等所有状态"""
@@ -195,7 +193,6 @@ class ChatTool(QObject):
         self.progress_widget.set_thinking_mode()
         self.http_client.start()
 
-    # 保留必要的工具方法（未过度拆分）
     def _build_request_data(self, user_input, stream, use_self_game):
         """构建请求数据（复用逻辑）"""
         data = {
@@ -204,7 +201,7 @@ class ChatTool(QObject):
             "use_self_game": use_self_game,
             "session_id": self._get_current_session_id()
         }
-        from system.config import config as _cfg
+        from core.system.config import config as _cfg
         if _cfg.system.voice_enabled and _cfg.voice_realtime.voice_mode in ["hybrid", "end2end"]:
             data["return_audio"] = True
         return data
@@ -220,7 +217,7 @@ class ChatTool(QObject):
             self.progress_widget.stop_loading(),
             self.start_non_stream_typewriter(text)
         ))
-        
+
     def _bind_stream_client_signals(self, client):
         """绑定流式HTTP客户端的信号"""
         client.status_changed.connect(lambda st: self.progress_widget.status_label.setText(st))
@@ -236,191 +233,6 @@ class ChatTool(QObject):
         if text.startswith(('session_id: ', 'audio_url: ')):
             return
         self.append_response_chunk(text)
-
-    def add_system_message(self, content: str) -> str:
-        """添加系统消息到聊天界面"""
-        msg = extract_message(content)
-        content_html = str(msg)  # .replace('\\n', '\n').replace('\n', '<br>')
-
-        # 生成消息ID
-        self.message_counter += 1
-        message_id = f"msg_{self.message_counter}"
-
-        # 创建系统消息对话框
-        parent_widget = self.chat_layout.parentWidget()
-        message_dialog = MessageRenderer.create_system_message(
-            "系统", content_html, parent_widget
-        )
-
-        # 存储消息信息
-        self._messages[message_id] = {
-            'name': "系统",
-            'content': content_html,
-            'full_content': content,
-            'dialog_widget': message_dialog,
-            'is_ai': False,
-            'is_system': True
-        }
-
-        # 添加到布局
-        self._remove_layout_stretch()
-        self.chat_layout.addWidget(message_dialog)
-        self.chat_layout.addStretch()
-
-        # 滚动到底部
-        self.smart_scroll_to_bottom()
-        return message_id
-
-    def add_ai_message(self, content: str = "") -> str:
-        """添加AI消息到聊天界面（流式处理时初始化为空消息）"""
-        # 对于AI回复，直接使用原始内容，不经过extract_message处理
-        # 因为AI回复通常是纯文本或Markdown格式，不是JSON格式
-        content_html = content
-
-        logger.info(f"[UI] 添加AI消息，内容长度: {len(content_html)}")
-
-        # 生成消息ID
-        self.message_counter += 1
-        message_id = f"msg_{self.message_counter}"
-
-        # 创建AI消息对话框
-        parent_widget = self.chat_layout.parentWidget()
-        message_dialog = MessageRenderer.create_assistant_message(
-            self.ai_name, content_html, parent_widget
-        )
-
-        # 存储消息信息
-        self._messages[message_id] = {
-            'name': self.ai_name,
-            'content': content_html,
-            'full_content': content,
-            'dialog_widget': message_dialog,
-            'is_ai': True
-        }
-
-        # 添加到布局
-        self._remove_layout_stretch()
-        self.chat_layout.addWidget(message_dialog)
-        self.chat_layout.addStretch()
-
-        return message_id
-
-    def update_last_message(self, new_text):
-        """更新最后一条消息的内容"""
-        line=new_text.count('\n')
-        # 处理消息格式化
-        msg = extract_message(new_text)
-        from nagaagent_core.vendors.markdown import markdown
-        content_html = str(msg).replace('\n', '<br>')
-        content_html = markdown(content_html, extensions=['extra', 'codehilite'])
-
-        # 优先使用当前消息ID（流式更新时设置的）
-        message_id = None
-        message_source = ""
-        if self.current_message_id and self.current_message_id:
-            message_id = self.current_message_id
-            message_source = "text"
-        elif self.current_ai_voice_message_id and self.current_ai_voice_message_id:
-            message_id = self.current_ai_voice_message_id
-            message_source = "voice"
-        elif self._messages:
-            # 如果没有当前消息ID，查找最后一个消息
-            message_id = max(self._messages.keys(), key=lambda x: int(x.split('_')[-1]) if '_' in x else 0)
-            message_source = "last"
-
-        # 更新消息内容
-        if message_id and message_id in self._messages:
-            message_info = self._messages[message_id]
-
-            # 更新存储的消息信息
-            message_info['content'] = content_html
-            message_info['full_content'] = new_text
-
-            # 尝试使用MessageRenderer更新（更可靠）
-            if 'dialog_widget' in message_info and message_info['dialog_widget']:
-                try:
-                    from ui.utils.message_renderer import MessageRenderer
-                    MessageRenderer.update_message_content(message_info['dialog_widget'], content_html)
-                except Exception as e:
-                    # 如果MessageRenderer失败，使用备用方法
-                    content_label = message_info['dialog_widget'].findChild(QLabel)
-                    if content_label:
-                        content_label.setText(content_html)
-                        content_label.setTextFormat(1)  # Qt.RichText
-                        content_label.setWordWrap(True)
-            # 或者直接更新widget
-            elif 'widget' in message_info:
-                content_label = message_info['widget'].findChild(QLabel)
-                if content_label:
-                    # 使用HTML格式化的内容
-                    content_label.setText(content_html)
-                    # 确保标签可以正确显示HTML
-                    content_label.setTextFormat(1)  # Qt.RichText
-                    content_label.setWordWrap(True)
-
-        # 自动滚动到底部，确保最新消息可见（使用智能滚动，不打扰正在查看历史的用户）
-        self.smart_scroll_to_bottom()
-
-    def clear_chat_history(self):
-        """清除所有聊天历史"""
-        # 清除UI组件
-        for msg_id, msg_info in self._messages.items():
-            if msg_info['dialog_widget']:
-                msg_info['dialog_widget'].deleteLater()
-
-        # 清除布局
-        while self.chat_layout.count() > 0:
-            item = self.chat_layout.takeAt(0)
-            if item and item.widget():
-                item.widget().deleteLater()
-
-        # 重置状态
-        self._messages.clear()
-        self.message_counter = 0
-        self.current_message_id = None
-        self.current_response = ""
-
-        # 恢复stretch
-        self.chat_layout.addStretch()
-
-    def load_persistent_history(self, max_messages: int = 20):
-        """从持久化存储加载历史对话"""
-        try:
-            # 调用MessageRenderer加载历史
-            ui_messages = MessageRenderer.load_persistent_context_to_ui(
-                parent_widget=self.chat_layout.parentWidget(),
-                max_messages=max_messages
-            )
-
-            if not ui_messages:
-                logger.info("未加载到历史对话")
-                return
-
-            # 清空现有布局
-            self._remove_layout_stretch()
-            while self.chat_layout.count() > 0:
-                item = self.chat_layout.takeAt(0)
-                if item and item.widget():
-                    item.widget().deleteLater()
-
-            # 加载历史消息到UI和存储
-            for message_id, message_info, dialog in ui_messages:
-                self.chat_layout.addWidget(dialog)
-                self._messages[message_id] = message_info
-                self.message_counter = max(self.message_counter, int(message_id.split('_')[-1]))
-
-            # 恢复stretch并滚动到底部
-            self.chat_layout.addStretch()
-            self.smart_scroll_to_bottom()
-            logger.info(f"加载完成 {len(ui_messages)} 条历史对话")
-
-        except Exception as e:
-            logger.error(f"加载历史对话失败: {str(e)}")
-            self.add_system_message(f"❌ 加载历史对话失败: {str(e)}")
-
-        # ------------------------------
-        # 工具调用处理
-        # ------------------------------
 
     def handle_tool_call(self, notification: str):
         """处理工具调用通知"""
@@ -525,6 +337,9 @@ class ChatTool(QObject):
                 self.add_ai_message(ai_response)
                 logger.info(f"[UI] AI回复已直接添加到聊天界面")
 
+                # 按回复情绪自动切换 Live2D 表情
+                self._apply_reply_emotion(ai_response)
+
                 # 保存对话历史到API服务器
                 self._save_tool_conversation_to_history(ai_response)
             else:
@@ -602,180 +417,6 @@ class ChatTool(QObject):
             import uuid
             return str(uuid.uuid4())
 
-# 工具执行结果已通过LLM总结并保存到对话历史中
-# UI可以通过查询历史获取工具执行结果
-
-    # ------------------------------
-    # 滚动控制
-    # ------------------------------
-
-    def smart_scroll_to_bottom(self):
-        """智能滚动到底部（如果用户正在查看历史消息，则不滚动）"""
-        # 如果不在 Qt 主线程，重新投递
-        if QThread.currentThread() != QCoreApplication.instance().thread():
-            logger.debug(
-                f"不在qt线程。当前线程：{QThread.currentThread()} QT线程：{QCoreApplication.instance().thread()} ")
-            QMetaObject.invokeMethod(self, "smart_scroll_to_bottom", Qt.QueuedConnection)
-            return
-
-        scrollbar = self.chat_scroll_area.verticalScrollBar()
-        is_at_bottom = (scrollbar.value() >= (scrollbar.maximum() - 500))  # 修改距离阈值从1000改为500
-        logger.debug(f"移动到末尾的距离检测：{is_at_bottom} 数值：{scrollbar.maximum() - scrollbar.value()} ")
-        if is_at_bottom:
-            def to_bottom():
-                scrollbar.setValue(scrollbar.maximum())
-
-            self.scroll_timer.singleShot(10, to_bottom)
-
-    def _remove_layout_stretch(self):
-        """移除布局中最后一个stretch"""
-        for i in reversed(range(self.chat_layout.count())):
-            item = self.chat_layout.itemAt(i)
-            if item and not item.widget():  # 识别stretch/spacer
-                self.chat_layout.removeItem(item)
-                break
-
-    # ------------------------------
-    # 流式响应处理
-    # ------------------------------
-
-
-    def append_response_chunk(self, chunk: str):
-        """追加响应片段（流式模式）- 实时显示到消息框"""
-        # 检查是否为工具调用相关标记
-        if any(marker in chunk for marker in ["[TOOL_CALL]", "[TOOL_START]", "[TOOL_RESULT]", "[TOOL_ERROR]"]):
-            return
-
-        logger.debug(f"收到chunk：{chunk}")
-
-        # 检查是否在工具调用过程中
-        if self.in_tool_call_mode:
-            # 工具调用模式结束，创建新的消息框
-            self.in_tool_call_mode = False
-            self.current_message_id = None
-
-        # 实时更新显示
-        if not self.current_message_id:
-            # 第一次收到chunk时，创建新消息
-            self.current_message_id = self.add_ai_message(chunk)
-            self.current_response = chunk
-        else:
-            # 后续chunk，追加到当前消息
-            self.current_response += chunk
-            #
-            # # 限制更新频率（节流）
-            # current_time = time.time()
-            # # 每50毫秒更新一次UI，减少闪动
-            # if current_time - self.last_update_time >= 0.05:
-            self.update_last_message(self.current_response)
-            # self.last_update_time = current_time
-
-    def finalize_streaming_response(self):
-        """完成流式响应处理"""
-        if self.current_response:
-            # 对累积的完整响应进行消息提取
-            final_message = extract_message(self.current_response)
-
-            # 更新最终消息
-            if self.current_message_id:
-                self.update_last_message(final_message)
-
-        # 重置状态
-        self.current_response = None
-        self.current_message_id = None
-        self.last_update_time = 0
-
-        # 停止加载状态
-        self.progress_widget.stop_loading()
-
-    # ------------------------------
-    # 打字机效果
-    # ------------------------------
-
-    def _start_stream_typewriter(self):
-        """启动流式聊天的打字机效果"""
-        if self.stream_typewriter_timer and self.stream_typewriter_timer.isActive():
-            return
-
-        self.stream_typewriter_timer = QTimer()
-        self.stream_typewriter_timer.timeout.connect(self._stream_typewriter_tick)
-        self.stream_typewriter_timer.start(100)  # 100ms一个字符
-
-    def _stream_typewriter_tick(self):
-        """流式聊天的打字机效果tick"""
-        if self.stream_typewriter_index >= len(self.stream_typewriter_buffer):
-            self._stop_stream_typewriter()
-            return
-
-        # 每次显示1-3个字符
-        next_char = self.stream_typewriter_buffer[self.stream_typewriter_index]
-        chars_to_add = 1
-
-        # 如果是英文字符或空格，可以一次显示多个
-        if next_char and ord(next_char) < 128:  # ASCII字符
-            chars_to_add = min(3, len(self.stream_typewriter_buffer) - self.stream_typewriter_index)
-
-        self.stream_typewriter_index += chars_to_add
-        displayed_text = self.stream_typewriter_buffer[:self.stream_typewriter_index]
-
-        # 更新消息显示
-        self.update_last_message(displayed_text)
-
-    def _stop_stream_typewriter(self):
-        """停止流式打字机效果"""
-        if self.stream_typewriter_timer and self.stream_typewriter_timer.isActive():
-            self.stream_typewriter_timer.stop()
-            self.stream_typewriter_timer.deleteLater()
-            self.stream_typewriter_timer = None
-
-    def start_non_stream_typewriter(self, full_text: str):
-        """为非流式响应启动打字机效果"""
-        # 创建空消息
-        message_id = self.add_ai_message("")
-        self.non_stream_message_id = message_id
-        self.current_message_id = message_id  # 让update_last_message能找到这个消息
-
-        # 初始化打字机变量
-        self.non_stream_text = full_text
-        self.non_stream_index = 0
-
-        if not self.non_stream_timer:
-            self.non_stream_timer = QTimer()
-            self.non_stream_timer.timeout.connect(self._non_stream_typewriter_tick)
-
-        # 启动定时器
-        self.non_stream_timer.start(100)  # 100ms一个字符
-
-    def _non_stream_typewriter_tick(self):
-        """非流式响应的打字机效果tick"""
-        if self.non_stream_index >= len(self.non_stream_text):
-            # 所有字符都显示完了，停止定时器并清理
-            self.non_stream_timer.stop()
-            self.non_stream_timer.deleteLater()
-            self.non_stream_timer = None
-
-            # 清理临时变量
-            self.non_stream_text = None
-            self.non_stream_index = None
-            self.non_stream_message_id = None
-            self.current_message_id = None
-            return
-
-        # 每次显示1-3个字符
-        next_char = self.non_stream_text[self.non_stream_index]
-        chars_to_add = 1
-
-        # 如果是英文字符或空格，可以一次显示多个
-        if next_char and ord(next_char) < 128:  # ASCII字符
-            chars_to_add = min(3, len(self.non_stream_text) - self.non_stream_index)
-
-        self.non_stream_index += chars_to_add
-        displayed_text = self.non_stream_text[:self.non_stream_index]
-
-        # 更新消息显示
-        self.update_last_message(displayed_text)
-
-
     def cancel_current_task(self):
         """取消当前任务"""
         # 停止所有打字机效果
@@ -819,14 +460,10 @@ class ChatTool(QObject):
             self.http_client.deleteLater()
             self.http_client = None
 
-    # ------------------------------
-    # 属性访问器
-    # ------------------------------
-
-    @property
     def messages(self) -> Dict[str, Dict]:
         """获取所有消息"""
         return self._messages.copy()  # 返回副本，防止外部修改
+
 
 
 from ..utils.lazy import lazy

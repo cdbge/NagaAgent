@@ -5,17 +5,16 @@ Live2D动作配置对话框 - 优雅版本
 采用卡片式网格布局，提供更现代的交互体验
 """
 
-from nagaagent_core.vendors.PyQt5.QtWidgets import (
+from PyQt5.QtWidgets import (
+    QFrame,
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QWidget, QGridLayout, QLineEdit,
     QScrollArea, QTabWidget
 )
-from nagaagent_core.vendors.PyQt5.QtCore import (
-    Qt, pyqtSignal, QSize, QTimer, QPoint
+from PyQt5.QtCore import (
+    Qt, pyqtSignal, QTimer
 )
-from nagaagent_core.vendors.PyQt5.QtGui import QFont
-import json
-import os
+from PyQt5.QtGui import QFont
 import logging
 
 from ui.styles.settings_styles import (
@@ -36,14 +35,30 @@ from ui.styles.settings_styles import (
 logger = logging.getLogger("live2d.config_dialog")
 
 
+def _make_scroll_transparent(scroll_area, content):
+    """让 QScrollArea 及 viewport / 内容控件都不涂背景。
+
+    QScrollArea 的 viewport 默认 autoFillBackground=True，会在滚动区
+    画一块 Qt 默认窗口色（#F0F0F0）—— 深色主题下就是一块刺眼白板，
+    QSS 选择器也够不到它。
+    """
+    try:
+        scroll_area.viewport().setAutoFillBackground(False)
+        content.setAutoFillBackground(False)
+        scroll_area.setStyleSheet("background: transparent; border: none;")
+    except Exception:
+        pass
+
+
 class ActionCard(QWidget):
     """单个动作/表情卡片"""
 
     clicked = pyqtSignal(dict)  # 点击信号
 
-    def __init__(self, action_data, parent=None):
+    def __init__(self, action_data, parent=None, index=0):
         super().__init__(parent)
         self.action_data = action_data
+        self._index = index
         self.selected = False
         self.setObjectName("Live2DActionCard")
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -51,8 +66,20 @@ class ActionCard(QWidget):
         self.setCursor(Qt.PointingHandCursor)
 
         self.setup_ui()
-        self.setStyleSheet(ACTION_CARD_WIDGET_STYLE)
+        # 样式由 ModernLive2DConfigDialog.apply_theme_style 统一下发。
+        # 这里若自己 setStyleSheet 会覆盖父级主题 —— Qt 里子控件自身样式优先。
+        self.setObjectName("ActionCard")
+        # QSS 画背景/边框的 QWidget 子类必须开这个属性，否则样式不生效
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.update_state()
+
+    def showEvent(self, event):  # noqa: N802
+        """卡片显示时重刷一次状态样式（主题可能已切换）。"""
+        super().showEvent(event)
+        try:
+            self._apply_state_style()
+        except Exception:
+            pass
 
     def setup_ui(self):
         """初始化UI"""
@@ -60,14 +87,11 @@ class ActionCard(QWidget):
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(6)
 
-        self.icon_label = QLabel(self.action_data.get('icon', '🎭'))
-        self.icon_label.setObjectName("Live2DActionIcon")
+        # 档案编号替代 emoji：emoji 是彩色位图，和两套主题都不搭，
+        # 且不同系统渲染差异大；编号是等宽文字，天然跟主题。
+        self.icon_label = QLabel(f"{self._index:02d}")
+        self.icon_label.setObjectName("Live2DActionNum")
         self.icon_label.setAlignment(Qt.AlignCenter)
-        icon_font = QFont("Segoe UI Emoji")
-        if icon_font.family() != "Segoe UI Emoji":
-            icon_font = QFont()
-        icon_font.setPointSize(24)
-        self.icon_label.setFont(icon_font)
         layout.addWidget(self.icon_label, alignment=Qt.AlignHCenter)
 
         display_name = self.action_data.get('display', self.action_data.get('name', ''))
@@ -75,19 +99,12 @@ class ActionCard(QWidget):
         self.name_label.setObjectName("Live2DActionName")
         self.name_label.setAlignment(Qt.AlignCenter)
         self.name_label.setWordWrap(True)
-        name_font = QFont("Lucida Console")
-        name_font.setPointSize(10)
-        name_font.setBold(True)
-        self.name_label.setFont(name_font)
         layout.addWidget(self.name_label)
 
         type_text = "动作" if self.action_data.get('type') == 'motion' else "表情"
         self.type_label = QLabel(type_text)
         self.type_label.setObjectName("Live2DActionType")
         self.type_label.setAlignment(Qt.AlignCenter)
-        type_font = QFont("Lucida Console")
-        type_font.setPointSize(9)
-        self.type_label.setFont(type_font)
         layout.addWidget(self.type_label)
 
         layout.addStretch(1)
@@ -102,7 +119,54 @@ class ActionCard(QWidget):
         self.setProperty("selected", self.selected)
         self.style().unpolish(self)
         self.style().polish(self)
+        self._apply_state_style()
         self.update()
+
+    def _apply_state_style(self):
+        """按选中状态给卡片自己套样式。
+
+        不用 QSS 属性选择器：卡片在加入布局前就调 set_selected，
+        那时 polish 不生效，导致选中/未选中看起来完全一样。
+        直接设在卡片身上最可靠（子控件样式优先级最高）。
+        """
+        try:
+            from ui.styles.tokens import get_theme
+
+            t = get_theme()
+            if self.selected:
+                bg = t.accent_soft if t.is_light else t.panel_2
+                border = f"2px solid {t.accent}"
+                num_color = t.accent
+            else:
+                bg = t.bg
+                border = f"{t.border_width}px solid {t.border}"
+                num_color = t.text_mute
+            self.setStyleSheet(
+                "QWidget#ActionCard {"
+                f"  background: {bg};"
+                f"  border: {border};"
+                "  border-radius: 0px;"
+                "}"
+            )
+            try:
+                self.icon_label.setStyleSheet(
+                    f"color: {num_color}; background: transparent;"
+                    f"font-family: {t.font_mono}; font-size: 15pt;"
+                    "font-weight: 700; letter-spacing: 1px;"
+                )
+                self.name_label.setStyleSheet(
+                    f"color: {t.text}; background: transparent;"
+                    f"font-family: {t.font_mono}; font-size: 9.5pt;"
+                    "font-weight: 700;"
+                )
+                self.type_label.setStyleSheet(
+                    f"color: {t.text_mute}; background: transparent;"
+                    f"font-family: {t.font_cn}; font-size: 8.5pt;"
+                )
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.debug(f"[Live2D] 卡片状态样式失败: {exc}")
 
     def enterEvent(self, event):
         super().enterEvent(event)
@@ -124,8 +188,8 @@ class SearchBar(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setObjectName("Live2DSearchContainer")
-        self.setStyleSheet(DIALOG_SEARCH_CONTAINER_STYLE)
+        self.setObjectName("SearchBar")
+        # 样式由对话框统一按主题下发（见 ModernLive2DConfigDialog.apply_theme_style）
         self.setup_ui()
 
     def setup_ui(self):
@@ -135,7 +199,8 @@ class SearchBar(QWidget):
         layout.setSpacing(6)
 
         # 搜索图标
-        icon_label = QLabel("🔍")
+        icon_label = QLabel("⌕")
+        icon_label.setObjectName("DlgSearchIcon")
         icon_label.setStyleSheet(
             "color: rgba(255, 255, 255, 180); font: 12pt 'Lucida Console'; padding: 0 6px;"
         )
@@ -144,7 +209,7 @@ class SearchBar(QWidget):
         # 搜索输入框
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("搜索动作或表情...")
-        self.search_input.setStyleSheet(INPUT_STYLE)
+        self.search_input.setObjectName("DlgInput")
         self.search_input.textChanged.connect(self.search_changed)
         layout.addWidget(self.search_input, 1)
 
@@ -205,7 +270,9 @@ class ModernLive2DConfigDialog(QDialog):
 
         # 设置窗口样式
         self.setStyleSheet(self.get_dialog_style())
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        # 不能开 WA_TranslucentBackground：窗口背景会变透明，
+        # QSS 里 QDialog 的实色底画不出来，整窗露黑（纸色主题下尤其明显）。
+        # 需要圆角描边的话由 QSS 的 border-radius 处理即可。
 
         self.setup_ui()
         self.load_actions()
@@ -214,47 +281,168 @@ class ModernLive2DConfigDialog(QDialog):
         # QTimer.singleShot(100, self.update_card_display)
 
     def get_dialog_style(self):
-        """获取对话框样式"""
-        return (
-            LABEL_STYLE
-            + DIALOG_TAB_BAR_STYLE
-            + """
-QDialog {
-    background: rgba(22, 22, 28, 235);
-    border-radius: 24px;
-}
+        """按当前主题生成对话框样式。
 
-QTabWidget::tab-bar {
-    alignment: center;
-}
+        原实现整段硬编码深色，在纸色主题下是一块黑窗；
+        现在所有色值来自 ui/styles/tokens.py。
+        """
+        try:
+            from ui.styles.themed_qss import (
+                dialog_style,
+                hint_style,
+                label_style,
+                scrollbar_style,
+                tab_bar_style,
+                title_style,
+            )
+            from ui.styles.tokens import get_theme
 
-QScrollArea {
-    background: transparent;
-    border: none;
-}
+            t = get_theme()
+            return (
+                dialog_style(t)
+                + label_style(t)
+                + title_style(t)
+                + hint_style(t)
+                + tab_bar_style(t)
+                + scrollbar_style(t)
+            )
+        except Exception as exc:
+            logger.debug(f"[Live2D] 主题样式失败，用默认: {exc}")
+            return LABEL_STYLE + DIALOG_TAB_BAR_STYLE
 
-QScrollBar:vertical {
-    background: rgba(255, 255, 255, 18);
-    width: 8px;
-    border-radius: 4px;
-}
+    def apply_theme_style(self):
+        """按当前主题生成整套弹窗样式。
 
-QScrollBar::handle:vertical {
-    background: rgba(255, 255, 255, 60);
-    border-radius: 4px;
-    min-height: 32px;
-}
+        所有子控件只打 objectName，颜色/圆角/字号全部来自主题令牌 ——
+        换肤时只需重跑这一个方法。
+        """
+        try:
+            from ui.styles.tokens import get_theme
 
-QScrollBar::handle:vertical:hover {
-    background: rgba(255, 255, 255, 80);
-}
+            t = get_theme()
+            panel = t.panel
+            field = t.panel_3 if t.is_light else t.panel_2
+            cn = t.font_cn
+            mono = t.font_mono
+            r = t.radius_sm
+            # 深色主题下 accent_soft 是近透明琥珀，铺在卡片上文字会看不见；
+            # 浅色主题才用它做选中底。
+            sel_bg = t.accent_soft if t.is_light else t.panel_2
+            self.setStyleSheet(f"""
+                QDialog {{
+                    background: {panel};
+                    border: {t.border_width}px solid {t.border};
+                    border-radius: {t.radius_lg}px;
+                }}
+                QWidget {{ color: {t.text}; }}
 
-QScrollBar::add-line:vertical,
-QScrollBar::sub-line:vertical {
-    height: 0px;
-}
-            """
-        )
+                QLabel#DlgTitle {{
+                    color: {t.accent};
+                    font-family: {cn}; font-size: 15pt; font-weight: 700;
+                    letter-spacing: {t.label_tracking};
+                    background: transparent;
+                }}
+                QLabel#DlgHint {{
+                    color: {t.text_mute};
+                    font-family: {mono}; font-size: 8pt;
+                    background: transparent;
+                }}
+
+                /* 标签页：直角、下划线当前态 */
+                QTabWidget#DlgTabs::pane {{ border: none; background: transparent; }}
+                QTabWidget#DlgTabs QTabBar {{ background: transparent; }}
+                QTabWidget#DlgTabs QTabBar::tab {{
+                    background: transparent;
+                    color: {t.text_mute};
+                    border: none;
+                    border-bottom: {t.border_width}px solid transparent;
+                    padding: 7px 18px;
+                    font-family: {cn}; font-size: 9.5pt;
+                }}
+                QTabWidget#DlgTabs QTabBar::tab:hover {{ color: {t.text}; }}
+                QTabWidget#DlgTabs QTabBar::tab:selected {{
+                    color: {t.accent};
+                    border-bottom: {t.border_width}px solid {t.accent};
+                    font-weight: 700;
+                }}
+
+                /* 滚动区 */
+                QScrollArea#DlgScroll {{ background: transparent; border: none; }}
+                /* viewport 也要透明，否则滚动区是一块 Qt 默认灰 */
+                QScrollArea#DlgScroll > QWidget > QWidget {{ background: transparent; }}
+                QWidget#DlgScrollContent {{ background: transparent; }}
+                QTabWidget#DlgTabs > QWidget {{ background: transparent; }}
+                QScrollBar:vertical {{ background: transparent; width: 6px; border: none; }}
+                QScrollBar::handle:vertical {{
+                    background: {t.border}; min-height: 28px; border-radius: 0px;
+                }}
+                QScrollBar::handle:vertical:hover {{ background: {t.accent}; }}
+                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                    height: 0; border: none; background: transparent;
+                }}
+                QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                    background: transparent;
+                }}
+
+                /* 输入框 */
+                QLabel#DlgSearchIcon {{
+                    color: {t.text_mute};
+                    font-family: {mono}; font-size: 13pt;
+                    background: transparent; border: none;
+                }}
+                QLineEdit#DlgInput {{
+                    background: {field};
+                    color: {t.text};
+                    border: {t.border_width}px solid {t.border};
+                    border-radius: {r}px;
+                    padding: 6px 10px;
+                    font-family: {cn}; font-size: 9.5pt;
+                    selection-background-color: {t.accent};
+                    selection-color: {t.text_inv};
+                }}
+                QLineEdit#DlgInput:focus {{ border: {t.border_width}px solid {t.accent}; }}
+
+                /* 按钮：主=实心强调色，次=描边 */
+                QPushButton#DlgPrimary {{
+                    background: {t.accent};
+                    color: {t.text_inv};
+                    border: none;
+                    border-radius: {r}px;
+                    padding: 7px 18px;
+                    font-family: {cn}; font-size: 9.5pt; font-weight: 700;
+                }}
+                QPushButton#DlgPrimary:hover {{ background: {t.accent_deep}; }}
+                QPushButton#DlgSecondary {{
+                    background: transparent;
+                    color: {t.text_dim};
+                    border: {t.border_width}px solid {t.border};
+                    border-radius: {r}px;
+                    padding: 7px 18px;
+                    font-family: {cn}; font-size: 9.5pt;
+                }}
+                QPushButton#DlgSecondary:hover {{
+                    color: {t.accent};
+                    border: {t.border_width}px solid {t.accent};
+                }}
+            """)
+        except Exception as exc:
+            logger.debug(f"[Live2D] 弹窗主题样式失败: {exc}")
+
+    def showEvent(self, event):  # noqa: N802
+        """显示后重刷一次主题。
+
+        关键：`__init__` 里第一次 setStyleSheet 时按钮还没创建，
+        之后 setup_ui 再设一次，Qt 也不会对已存在的子控件全部重新 polish
+        —— 表现为「取消/确定」按钮保持默认白底、文字看不见。
+        延迟到事件循环下一拍再设一次，控件已全部建立，样式才真正生效。
+        """
+        super().showEvent(event)
+        try:
+            from PyQt5.QtCore import QTimer
+
+            QTimer.singleShot(0, self.apply_theme_style)
+        except Exception:
+            pass
 
     def setup_ui(self):
         """初始化UI"""
@@ -273,7 +461,7 @@ QScrollBar::sub-line:vertical {
         # 内容区域 - 使用标签页
         self.tab_widget = QTabWidget()
         self.tab_widget.setDocumentMode(True)
-        self.tab_widget.setStyleSheet(DIALOG_TAB_BAR_STYLE)
+        self.tab_widget.setObjectName("DlgTabs")
 
         # 所有动作标签页
         self.all_tab, self.all_layout = self.create_actions_tab()
@@ -296,20 +484,23 @@ QScrollBar::sub-line:vertical {
         # 底部按钮
         self.create_buttons(main_layout)
 
+        # 统一由主题生成整套样式（子控件不再各自写死）
+        self.apply_theme_style()
+
     def create_header(self, parent_layout):
         """创建标题区域"""
         header_layout = QHBoxLayout()
 
         # 标题
         title_label = QLabel("Live2D 动作配置")
-        title_label.setStyleSheet(DIALOG_HEADER_TITLE_STYLE)
+        title_label.setObjectName("DlgTitle")
         header_layout.addWidget(title_label)
 
         header_layout.addStretch()
 
         # 提示文本
         hint_label = QLabel("选择最多 8 个动作或表情")
-        hint_label.setStyleSheet(DIALOG_HINT_LABEL_STYLE)
+        hint_label.setObjectName("DlgHint")
         hint_label.setContentsMargins(12, 0, 0, 0)
         header_layout.addWidget(hint_label)
 
@@ -320,16 +511,24 @@ QScrollBar::sub-line:vertical {
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area.setStyleSheet(SCROLL_AREA_STYLE)
+        scroll_area.setObjectName("DlgScroll")
+        # 代码里直接关掉 viewport 的自动填充 —— QSS 选择器够不到它，
+        # 不关的话滚动区永远是 Qt 默认灰 #F0F0F0。
+        try:
+            scroll_area.viewport().setAutoFillBackground(False)
+            scroll_area.setFrameShape(QFrame.NoFrame)
+        except Exception:
+            pass
 
         content_widget = QWidget()
-        content_widget.setStyleSheet(SCROLL_CONTENT_STYLE)
+        content_widget.setObjectName("DlgScrollContent")
         grid_layout = QGridLayout()
         grid_layout.setSpacing(12)
         grid_layout.setContentsMargins(12, 12, 12, 12)
         content_widget.setLayout(grid_layout)
 
         scroll_area.setWidget(content_widget)
+        _make_scroll_transparent(scroll_area, content_widget)
         return scroll_area, grid_layout
 
     def create_selected_tab(self):
@@ -339,7 +538,7 @@ QScrollBar::sub-line:vertical {
 
         # 提示信息
         self.selected_hint = QLabel("暂无选择")
-        self.selected_hint.setStyleSheet(DIALOG_HINT_LABEL_STYLE)
+        self.selected_hint.setObjectName("DlgHint")
         self.selected_hint.setAlignment(Qt.AlignCenter)
         self.selected_hint.setContentsMargins(0, 16, 0, 16)
         layout.addWidget(self.selected_hint)
@@ -357,11 +556,13 @@ QScrollBar::sub-line:vertical {
         self.selected_grid.setContentsMargins(12, 12, 12, 12)
 
         scroll_area.setWidget(self.selected_content)
+        _make_scroll_transparent(scroll_area, self.selected_content)
         layout.addWidget(scroll_area)
 
         # 清空按钮
         clear_btn = QPushButton("清空所有选择")
-        clear_btn.setStyleSheet(RESET_BUTTON_STYLE)
+        clear_btn.setObjectName("DlgSecondary")
+        self.clear_btn = clear_btn
         clear_btn.setCursor(Qt.PointingHandCursor)
         clear_btn.clicked.connect(self.clear_all_selections)
         layout.addWidget(clear_btn, 0, Qt.AlignCenter)
@@ -376,7 +577,7 @@ QScrollBar::sub-line:vertical {
 
         # 统计标签
         self.count_label = QLabel("已选择: 0 / 8")
-        self.count_label.setStyleSheet(STATUS_LABEL_STYLE)
+        self.count_label.setObjectName("DlgHint")
         button_layout.addWidget(self.count_label)
 
         button_layout.addStretch()
@@ -384,7 +585,8 @@ QScrollBar::sub-line:vertical {
         # 取消按钮
         cancel_btn = QPushButton("取消")
         cancel_btn.setFixedSize(100, 40)
-        cancel_btn.setStyleSheet(RESET_BUTTON_STYLE)
+        cancel_btn.setObjectName("DlgSecondary")
+        self.cancel_btn = cancel_btn
         cancel_btn.setCursor(Qt.PointingHandCursor)
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
@@ -392,7 +594,7 @@ QScrollBar::sub-line:vertical {
         # 确定按钮
         self.ok_btn = QPushButton("确定")
         self.ok_btn.setFixedSize(100, 40)
-        self.ok_btn.setStyleSheet(SAVE_BUTTON_STYLE)
+        self.ok_btn.setObjectName("DlgPrimary")
         self.ok_btn.setCursor(Qt.PointingHandCursor)
         self.ok_btn.clicked.connect(self.save_config)
         button_layout.addWidget(self.ok_btn)
@@ -403,6 +605,7 @@ QScrollBar::sub-line:vertical {
         """加载所有动作"""
         # 重置动作项缓存
         self.action_items = []
+        self._card_seq = 0
 
         # 加载动作
         for motion in self.available_actions.get("motions", []):
@@ -449,7 +652,12 @@ QScrollBar::sub-line:vertical {
         self.update_card_display()
 
     def update_card_display(self):
-        """更新卡片显示"""
+        """更新卡片显示。
+
+        每次重建前把序号归零 —— _create_card 会自增 _card_seq，
+        不归零的话反复刷新会让编号一路涨到 1400+。
+        """
+        self._card_seq = 0
         # 清理所有网格
         for layout in (self.all_layout, self.motions_layout, self.expressions_layout):
             self.clear_layout(layout)
@@ -561,7 +769,11 @@ QScrollBar::sub-line:vertical {
         logger.debug("创建卡片: name=%s, display=%s, icon=%s, type=%s",
                     item.get("name"), item.get("display"),
                     item.get("icon"), item.get("type"))
-        card = ActionCard(dict(item))
+        # 编号用序号而不是 len(action_items) ——
+        # load_actions 是先把 17 条数据全 append 再建卡片的，
+        # 用 len() 会让每张卡都显示总数 17。
+        self._card_seq = getattr(self, "_card_seq", 0) + 1
+        card = ActionCard(dict(item), index=self._card_seq)
         is_selected = any(sel.get("name") == item.get("name") for sel in self.selected_actions)
         card.set_selected(is_selected)
         card.clicked.connect(self.on_card_clicked)

@@ -1,7 +1,5 @@
-from system.config import config, logger
+from core.system.config import config, logger
 from . import chat
-from nagaagent_core.vendors.PyQt5.QtCore import QTimer
-import random
 
 class VoiceTool():
     def __init__(self, window):
@@ -22,8 +20,8 @@ class VoiceTool():
     def _init_voice(self):
         # 创建统一的语音管理器
         # 根据配置选择语音模式
-        from system.config import config
-        from voice.input.unified_voice_manager import UnifiedVoiceManager, VoiceMode
+        from core.system.config import config
+        from core.voice.input.unified_voice_manager import UnifiedVoiceManager, VoiceMode
 
         self.voice_integration = UnifiedVoiceManager(self)
 
@@ -54,7 +52,7 @@ class VoiceTool():
             # 注意：不要在这里清理超时标记，让 stop_voice 使用它来判断是否显示停止消息
 
             # 检查配置
-            from system.config import config
+            from core.system.config import config
 
             # 如果使用本地模式，不需要API密钥
             if config.voice_realtime.provider == "local":
@@ -65,7 +63,6 @@ class VoiceTool():
                 return
 
             # 使用统一语音管理器启动
-            from voice.input.unified_voice_manager import VoiceMode
 
             # 确定要使用的模式
             mode = self.default_voice_mode
@@ -123,7 +120,7 @@ class VoiceTool():
             self.start_voice_realtime()
         else:
             # 语音输入功能由统一语音管理器处理
-            from system.config import config
+            from core.system.config import config
             if config.voice_realtime.provider == "local" and hasattr(self.voice_integration, 'voice_integration'):
                 # 本地模式：切换录音
                 if hasattr(self.voice_integration.voice_integration, 'toggle_recording'):

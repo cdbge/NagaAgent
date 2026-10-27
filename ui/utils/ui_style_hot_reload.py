@@ -1,10 +1,9 @@
 """UI 风格配置热更新辅助模块"""
 
-from typing import List
 from weakref import WeakSet
 
-from system.config import add_config_listener
-from nagaagent_core.vendors.PyQt5.QtCore import QTimer
+from core.system.config import add_config_listener
+from PyQt5.QtCore import QTimer
 
 
 _windows: "WeakSet[object]" = WeakSet()

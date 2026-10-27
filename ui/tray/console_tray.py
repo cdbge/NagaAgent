@@ -4,19 +4,19 @@
 """
 import os
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 import platform
-import threading
 import subprocess
-import time
-from nagaagent_core.vendors.PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QApplication  # 统一入口 #
-from nagaagent_core.vendors.PyQt5.QtCore import QTimer, pyqtSignal, QObject  # 统一入口 #
-from nagaagent_core.vendors.PyQt5.QtGui import QIcon  # 统一入口 #
+from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction, QApplication  # 统一入口 #
+from PyQt5.QtCore import QTimer, pyqtSignal, QObject  # 统一入口 #
+from PyQt5.QtGui import QIcon  # 统一入口 #
 
 # 平台特定导入
 if platform.system() == 'Windows':
     import winreg
     import ctypes
-    from ctypes import wintypes
 else:
     # macOS/Linux 平台特定导入
     try:
@@ -577,6 +577,24 @@ def integrate_console_tray(auto_hide=True):
     # 连接信号
     tray_manager.show_console.connect(tray_manager.show_console_window)
     tray_manager.hide_console.connect(tray_manager.hide_console_window)
-    tray_manager.quit_application.connect(lambda: os._exit(0))
+    def _quit_gracefully():
+        """先让各窗口走 closeEvent 做资源清理，再退出事件循环。
+
+        原先这里是 os._exit(0)：直接终止进程，跳过所有 atexit 与 Qt 析构，
+        ChatWindow 的 closeEvent（Live2D 渲染定时器、GL 资源、WebEngine 渲染进程、
+        在跑的请求）一概不会执行。
+        """
+        app = QApplication.instance()
+        if app is None:
+            sys.exit(0)
+            return
+        for w in app.topLevelWidgets():
+            try:
+                w.close()          # 触发 ChatWindow.closeEvent
+            except Exception as exc:
+                logger.warning(f"关闭窗口失败（忽略）: {exc}")
+        app.quit()
+
+    tray_manager.quit_application.connect(_quit_gracefully)
     
     return tray_manager

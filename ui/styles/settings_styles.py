@@ -3,6 +3,15 @@
 将设置界面的样式从主代码中解耦出来，统一管理
 """
 
+import sys
+from pathlib import Path
+
+# 确保仓库根在 sys.path 上：本模块末尾要读 config.ui.font_family，
+# 而 config 模块按 `core.system.config` 导入。
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 # 系统提示词卡片样式
 SYSTEM_PROMPT_CARD_STYLE = """
 QWidget {
@@ -87,7 +96,7 @@ QLineEdit:focus {
 COMBO_STYLE = """
 QComboBox {
     background: rgba(17,17,17,180);
-    color: #fff;
+    color: #F0F2F7;
     border: 1px solid rgba(255, 255, 255, 50);
     border-radius: 6px;
     padding: 6px 10px;
@@ -97,11 +106,47 @@ QComboBox:hover {
     border: 1px solid rgba(255, 255, 255, 80);
 }
 QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
     border: none;
+    width: 26px;
 }
+/* 下拉箭头：不用系统原生箭头 —— 它在深色底上呈暗色、几乎看不见，
+   而 QSS 又无法像网页 CSS 那样用 border 画三角形，因此改用白色箭头图片。
+   __ARROW__ 会在模块末尾替换为绝对路径（QSS 的相对 url 不可靠）。 */
 QComboBox::down-arrow {
-    image: none;
-    border: none;
+    image: url(__ARROW__);
+    width: 12px;
+    height: 12px;
+    margin-right: 7px;
+}
+QComboBox::down-arrow:disabled {
+    image: url(__ARROW_DIM__);
+}
+/* 下拉弹出的列表必须单独样式化。
+   否则 QComboBox 上的浅色 color 会被列表项继承，而列表背景走系统默认
+   （Windows 浅色主题下为白色）—— 结果是浅字浅底、文字几乎看不见。 */
+QComboBox QAbstractItemView {
+    background: rgba(30, 30, 30, 252);
+    color: #F0F2F7;
+    border: 1px solid rgba(255, 255, 255, 70);
+    border-radius: 6px;
+    padding: 4px;
+    outline: none;
+    selection-background-color: rgba(100, 200, 255, 150);
+    selection-color: #FFFFFF;
+}
+QComboBox QAbstractItemView::item {
+    padding: 5px 8px;
+    min-height: 22px;
+    color: #F0F2F7;
+}
+QComboBox QAbstractItemView::item:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+QComboBox QAbstractItemView::item:selected {
+    background: rgba(100, 200, 255, 150);
+    color: #FFFFFF;
 }
 """
 
@@ -160,31 +205,7 @@ QSpinBox:focus {
 }
 """
 
-# 设置组头部样式
-SETTING_GROUP_HEADER_STYLE = """
-QWidget {
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 30);
-    margin-bottom: 2px;
-}
-"""
 
-# 设置组头部按钮样式
-SETTING_GROUP_HEADER_BUTTON_STYLE = """
-QPushButton {
-    color: #fff;
-    font: 16pt 'Lucida Console';
-    font-weight: bold;
-    background: transparent;
-    border: none;
-    padding: 10px 0;
-    text-align: left;
-}
-QPushButton:hover {
-    color: #e8f6ff;
-}
-"""
 
 # 滚动区域样式
 SCROLL_AREA_STYLE = """
@@ -336,25 +357,6 @@ QWidget {
 }
 """
 
-# 娜迦官网按钮样式
-NAGA_PORTAL_BUTTON_STYLE = """
-QPushButton {
-    background: rgba(100, 200, 255, 150);
-    color: #fff;
-    border: 1px solid rgba(255, 255, 255, 50);
-    border-radius: 6px;
-    padding: 6px 12px;
-    font: 10pt 'Lucida Console';
-    font-weight: bold;
-}
-QPushButton:hover {
-    border: 1px solid rgba(255, 255, 255, 80);
-    background: rgba(120, 220, 255, 180);
-}
-QPushButton:pressed {
-    background: rgba(80, 180, 255, 200);
-}
-"""
 
 # 语音模式禁用状态样式
 VOICE_MODE_DISABLED_STYLE = """
@@ -468,3 +470,60 @@ QLabel#Live2DActionType {
     font: 9pt 'Lucida Console';
 }
 """
+
+
+# ---------------------------------------------------------------------------
+# 字体族统一为配置值
+#
+# 本文件原先有 21 处硬编码 'Lucida Console'。它是纯西文等宽字体、**不含中文字形**，
+# 设置页里的中文只能走系统回退字体，导致同一行里中英文观感不一致。
+# 这里在模块加载时统一替换为 config.ui.font_family（默认 Microsoft YaHei）。
+#
+# 只替换字体族、不动各自字号 —— 各元素的字号本就有意区分层级（9/10/11/12/16pt）。
+# ---------------------------------------------------------------------------
+def _resolve_font_family() -> str:
+    try:
+        from core.system.config import config as _cfg
+
+        fam = (getattr(_cfg.ui, "font_family", "") or "").strip()
+        return fam or "Microsoft YaHei"
+    except Exception:
+        return "Microsoft YaHei"
+
+
+FONT_FAMILY = _resolve_font_family()
+
+for _name in [n for n in list(globals()) if n.isupper()]:
+    _val = globals().get(_name)
+    if isinstance(_val, str) and "Lucida Console" in _val:
+        globals()[_name] = _val.replace("Lucida Console", FONT_FAMILY)
+
+del _name, _val
+
+
+# ---------------------------------------------------------------------------
+# 下拉箭头图片路径
+#
+# QSS 的 url() 相对路径以**当前工作目录**为基准，而本项目的进程 cwd 不保证是
+# 仓库根（此前已修过几处同类问题），因此这里用绝对路径。
+# 图片由 scripts/gen_ui_icons.py 生成，可复现。
+# ---------------------------------------------------------------------------
+def _icon_url(filename: str) -> str:
+    try:
+        root = Path(__file__).resolve().parent.parent.parent
+        p = root / "ui" / "img" / "icons" / filename
+        if p.is_file():
+            return p.as_posix()
+        # 找不到就退回一个不存在的占位，Qt 会忽略该 image 声明而不是报错
+        return p.as_posix()
+    except Exception:
+        return ""
+
+
+_ARROW_WHITE = _icon_url("combo_arrow_white.png")
+_ARROW_DIM = _icon_url("combo_arrow_dim.png")
+
+if "__ARROW__" in COMBO_STYLE:
+    COMBO_STYLE = (COMBO_STYLE
+                   .replace("__ARROW_DIM__", _ARROW_DIM)
+                   .replace("__ARROW__", _ARROW_WHITE))

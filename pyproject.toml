@@ -6,28 +6,138 @@ authors = [
     {name = "柏斯阔落", email = "1781393885@qq.com"},
 ]
 readme = "README.md"
-requires-python = ">=3.11,<3.12" 
+requires-python = ">=3.11,<3.12"
+
+# 所有依赖直接声明。
+# 历史上这些依赖由外部包 nagaagent-core 转发（它只是 `from X import *` 的垫片），
+# 导致真正的依赖不可见、缺失也不会在安装时暴露。现已按实际 import 全部展开。
 dependencies = [
-    # 先装个pyqt5避免奇葩依赖
+    # ---------- 配置 / 序列化 ----------
+    "pydantic>=2.11.0",
+    "json5>=0.9.0",
+    "charset-normalizer>=3.4.0",
+    # 技能系统：读取 SKILL.md 的 YAML 前置元数据
+    "PyYAML>=6.0.2",
+
+    # ---------- GUI ----------
     "pyqt5==5.15.11",
     "pyqt5-qt5==5.15.2",
     "pyqt5-sip==12.17.0",
-    # 核心依赖 (已整合到nagaagent-core)
-    "nagaagent-core>=1.0.9",
-    "simpleaudio",
-    "pydub",
-    "onnxruntime>=1.23.2",
+    # 应用内嵌网页渲染：
+    #   ui/components/widget_markdown_latex.py  -> 聊天中的 Markdown/LaTeX 渲染
+    #   ui/components/widget_mindmap.py         -> 心智云图（vis-network 图形）
+    # 缺了它这两个功能会静默降级（不是崩溃），因此必须显式声明。
+    # ⚠️ PyQtWebEngine-Qt5 必须锁 5.15.2：上游默认会解析到 5.15.19，
+    #    而该版本在 Windows/py3.11 上**没有可用轮子**，会导致 uv sync 直接失败。
+    "PyQtWebEngine==5.15.7",
+    "PyQtWebEngine-Qt5==5.15.2",
+
+    # ---------- Web 服务 ----------
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "flask>=3.1.0",
+    "python-multipart>=0.0.22",
+    "websockets>=14.0",
+
+    # ---------- LLM / Agent / MCP ----------
+    # 注意：openai-agents（import 名 agents）被 mcpserver/agent_playwright_master 与
+    # mcpserver/agent_weather_time 使用。它的最新版要求 openai>=3.0.0，而
+    # langchain-openai 要求 openai<3.0.0，两者互斥——历史上正是靠外部 nagaagent-core
+    # 垫片把这个冲突藏了起来。此处不声明，改为可选依赖并让使用方优雅降级；
+    # 若要启用这两个 agent，需单独处理 openai 主版本升级。
+    "openai>=1.76.0",
+    "mcp>=1.6.0",
+    "langchain-openai>=0.3.0",
+    "langchain-community>=0.3.29",
+    "fastmcp>=2.11.2",
+
+    # ---------- HTTP / 网络 ----------
+    "requests>=2.32.0",
+    "aiohttp>=3.11.0",
+    "httpx[socks]>=0.28.0",
+    "html2text>=2024.2.26",
+    "python-dotenv>=1.1.0",
+
+    # ---------- 浏览器自动化 ----------
+    "playwright>=1.40.0",
+    "crawl4ai>=0.3.0",
+
+    # ---------- 知识图谱 / 记忆 ----------
+    # kuzu: 嵌入式图数据库（默认后端），无需服务/端口/Docker
+    "kuzu>=0.11.3",
+    # py2neo/neo4j: 仅在使用 neo4j 后端时需要
+    "py2neo>=2021.2.3",
+    "neo4j>=5.0.0",
+    "pyvis>=0.3.2",
+
+    # ---------- 语音 / 音频 ----------
+    "edge-tts>=7.0.0",
     "sounddevice>=0.5.3",
-    "pyautogui>=0.9.54",
+    "pydub",
+    # 注：曾声明 onnxruntime>=1.23.2，但**没有任何代码导入它**
+    # （VAD 实际是能量检测：audio_manager.py 的 normalized_energy < vad_threshold）。
+    # 且实测它与 PyQt5 存在结构性 DLL 冲突：先导入 PyQt5.QtWidgets 再导入
+    # onnxruntime 会报 "DLL load failed ... 初始化例程失败"。
+    # 原开发者在 core/voice/__init__.py 里已为此写过绕行注释。
+    # 故移除声明。若将来要用 silero VAD 等 ONNX 模型，务必在**导入 PyQt5 之前**
+    # 完成 onnxruntime 导入，或放到独立子进程里用。
     "librosa>=0.11.0",
+    "numpy>=1.26.4",
+    "scipy>=1.9.0",
+    "soundfile>=0.12.1",
+    "pygame>=2.5.0",
+    # TTS HTTP 服务（core/voice/output/）：gevent 提供 WSGIServer，
+    # emoji 在 handle_text.py 里是模块级导入（TTS 文本预处理）。
+    # 这两项此前靠已移除的 nagaagent-core 垫片间接带入，缺了会导致 TTS 服务起不来。
+    "gevent>=24.2.1",
+    "emoji>=2.0.0",
+    # 实时语音输入（core/voice/input/voice_realtime/）
+    "pyaudio>=0.2.14",
+    # 通义千问实时语音（adapters/qwen/client.py 在**模块级** import
+    # dashscope.audio.qwen_omni）。同为已移除的 nagaagent-core 垫片带入、
+    # 未被显式声明的一项：缺了它，adapters/__init__.py 的导入链会整条失败，
+    # 于是「统一语音」的 hybrid / 端到端模式**整体起不来**（不只是千问不可用）。
+    "dashscope>=1.20.0",
+
+    # ---------- Live2D ----------
+    # live2d-py 提供 `live2d.v3` 模块（ui/live2d/renderer.py 依赖，Cubism 3+ / .moc3）。
+    # 它此前由已移除的 nagaagent-core 垫片间接带入、从未被显式声明，
+    # 导致干净安装后 Live2D 会静默不可用（renderer 捕获 ImportError 后降级为纯图片）。
+    # ⚠️ 必须锁 0.5.4：1.0.0 只提供 `live2d.v2`（Cubism 2），**没有 v3**，
+    #    装了会导致 import live2d.v3 失败、Live2D 依然不可用。
+    "live2d-py==0.5.4",
+
+    # ---------- 系统控制 ----------
+    "pyautogui>=0.9.54",
+    "psutil>=5.9.0",
+    "PyOpenGL>=3.1.0",
     "pystray>=0.19.5",
     "paho-mqtt>=2.1.0",
+    # 音量 / 亮度 / 开机自启（servers/mcpserver/system_control/、ui/tray/auto_start.py）
+    # 同为 Windows 平台集成项，缺失时对应能力静默不可用。
+    "comtypes>=1.4.0",
+    "pycaw>=20240210",
+    "screen-brightness-control>=0.22.0",
+    "winshell>=0.6",
+
+    # ---------- 图像 / OCR ----------
+    "Pillow>=11.3.0",
+    "opencv-python>=4.10.0",
+    "pytesseract>=0.3.13",
+
+    # ---------- 文档 ----------
+    "python-docx>=1.2.0",
+    "msoffcrypto-tool",
+    "docx2pdf",
+
+    # ---------- 其他业务 ----------
     "bilibili-api>=4.1.0",
+    "markdown>=3.5",
+    "jmcomic>=2.6.5",
 ]
 
 # 可选依赖组
 [dependency-groups]
-#其余依赖组已经整合进入主依赖项
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.20.0",
@@ -35,20 +145,22 @@ dev = [
     "ruff>=0.1.0",
 ]
 build = [
-    "pyinstaller",
-    "python_docx>=1.2.0",
-    "fastmcp>=2.12.5",
-    "tensorboard>=2.20.0",
-    "expecttest>=0.3.0",
+    "pyinstaller>=6.18.0",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# 只包含仓库中真实存在的包目录。
+# 原配置里的 "agent" 与 "thinking" 两个目录并不存在（前者实为 agentserver），
+# 且漏掉了运行时必需的 mcpserver/mqtt_tool/system。
 [tool.hatch.build.targets.wheel]
-include = ["apiserver","mcpserver","mqtt_tool", "agent", "summer_memory", "thinking", "ui", "voice" ]
+include = [
+    "servers",
+    "core",
+    "ui",
+]
 
 [tool.ruff]
-line-length = 120 
-
+line-length = 120

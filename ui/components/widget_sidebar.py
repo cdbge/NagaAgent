@@ -148,6 +148,8 @@ class SidebarWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        # QWidget 子类默认不画 QSS 背景，必须显式打开（且在 super() 之后）
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setup_ui()
 
     def setup_ui(self):
@@ -169,11 +171,12 @@ class SidebarWidget(QWidget):
         self.layout.setSpacing(30)
 
         # 项目配置
+        # 注：原第 4 项「游戏拓展」对应的页面是个空 QWidget，功能从未实现，
+        # 已与其页面一并移除。
         self.items_config = [
             ("ui/img/icons/naga_chat.png", "对话"),
             ("ui/img/icons/mind_map.png", "心智云图"),
-            ("ui/img/icons/personality_game.png", "博弈图"),
-            ("ui/img/icons/love_adventure.png", "游戏拓展")
+            ("ui/img/icons/personality_game.png", "博弈图")
         ]
 
         #self._prepare_icons()

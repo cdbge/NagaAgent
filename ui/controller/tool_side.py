@@ -1,6 +1,6 @@
-from nagaagent_core.vendors.PyQt5.QtCore import Qt, QParallelAnimationGroup, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import Qt, QParallelAnimationGroup, QPropertyAnimation, QEasingCurve
 import os
-from system.config import config, logger
+from core.system.config import config
 from . import chat
 class SideTool():
     def __init__(self, window):
@@ -25,32 +25,15 @@ class SideTool():
         
         # --- 立即切换界面状态 ---
         if self.full_img:  # 展开状态 - 进入设置页面
-            window.input_wrap.hide()  # 隐藏输入框
-            window.chat_stack.setCurrentIndex(1)  # 切换到设置页
-            self.side.setCursor(Qt.PointingHandCursor)  # 保持点击指针，可点击收缩
-            window.titlebar.text = "SETTING PAGE"
-            window.titlebar.update()
-            self.side.setStyleSheet(f"""
-                QWidget {{
-                    background: rgba(17,17,17,{int(config.ui.bg_alpha*255*0.9)});
-                    border-radius: 15px;
-                    border: 1px solid rgba(255, 255, 255, 80);
-                }}
-            """)
+            # 走统一入口：同时处理页面栈、导航高亮、侧栏主题样式。
+            # 原实现直接 setCurrentIndex(1) 并写死 rgba(17,17,17) + 15px 圆角，
+            # 在纸色主题下会变成一块深色圆角方块。
+            window.enter_settings(source="live2d")
+            self.side.setCursor(Qt.PointingHandCursor)
         else:  # 收缩状态 - 主界面聊天模式
-            window.input_wrap.show()  # 显示输入框
-            window.chat_stack.setCurrentIndex(0)  # 切换到聊天页
+            window.leave_settings()
             window.input.setFocus()  # 恢复输入焦点
-            self.side.setCursor(Qt.PointingHandCursor)  # 保持点击指针
-            window.titlebar.text = "NAGA AGENT"
-            window.titlebar.update()
-            self.side.setStyleSheet(f"""
-                QWidget {{
-                    background: rgba(17,17,17,{int(config.ui.bg_alpha*255*0.7)});
-                    border-radius: 15px;
-                    border: 1px solid rgba(255, 255, 255, 40);
-                }}
-            """)
+            self.side.setCursor(Qt.PointingHandCursor)
         # --- 立即切换界面状态 END ---
         
         # 创建优化后的动画组

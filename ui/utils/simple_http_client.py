@@ -4,11 +4,10 @@
 UI层不应该处理复杂的业务逻辑，只负责显示结果
 """
 
-from nagaagent_core.vendors.PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal
 import requests
 import base64
-import json
-from system.config import config, logger
+from core.system.config import logger
 
 
 class SimpleHttpClient(QThread):

@@ -3,9 +3,17 @@
 提供统一的按钮创建接口
 """
 
-from nagaagent_core.vendors.PyQt5.QtWidgets import QPushButton  # 统一入口 #
+from PyQt5.QtWidgets import QPushButton  # 统一入口 #
 from .button_styles import BUTTON_CONFIGS, DOCUMENT_ACTION_BUTTON_STYLE, CANCEL_BUTTON_STYLE
 
+
+_KIND_MAP = {
+    "upload": "upload",
+    "mind_map": "mind_map",
+    "font_size": "font_size",
+    "self_game": "intent",
+    "voice_realtime": "voice",
+}
 
 class ButtonFactory:
     """按钮工厂类"""
@@ -26,6 +34,15 @@ class ButtonFactory:
             raise ValueError(f"不支持的按钮类型: {button_type}")
             
         config = BUTTON_CONFIGS[button_type]
+
+        # 主题化线稿按钮：替掉原来的彩色 emoji 圆按钮
+        try:
+            from ui.components.archive.icon_button import ThemedIconButton
+
+            kind = _KIND_MAP.get(button_type, "upload")
+            return ThemedIconButton(kind, parent, config.get("tooltip", ""))
+        except Exception:
+            pass  # 回退到旧实现
         
         # 创建按钮
         button = QPushButton(config["icon"], parent)

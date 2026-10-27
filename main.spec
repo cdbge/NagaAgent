@@ -19,7 +19,8 @@ for package in metadata_packages:
 # (source_path, destination_in_bundle)
 datas += [
     ('config.json.example', '.'),
-    ('config.json', '.'),
+    # 不要打包 config.json：它包含用户私有的 api_key / neo4j_password 等凭据。
+    # 首次启动时由 build.py / setup 从 config.json.example 复制生成。
     ('LICENSE', '.'),
     ('pyproject.toml', '.'),
     ('README.md', '.'),
@@ -29,16 +30,10 @@ datas += [
 # 收集需要包含的目录
 # Tree 对象需要在 Analysis 中单独处理
 trees = [
-    Tree('agentserver', prefix='agentserver'),
-    Tree('apiserver', prefix='apiserver'),
-    Tree('game', prefix='game'),
-    Tree('logs', prefix='logs'),
-    Tree('mcpserver', prefix='mcpserver'),
-    Tree('mqtt_tool', prefix='mqtt_tool'),
-    Tree('summer_memory', prefix='summer_memory'),
-    Tree('system', prefix='system'),
+    Tree('servers', prefix='servers'),
+    Tree('core', prefix='core'),
+    Tree('data/logs', prefix='data/logs'),
     Tree('ui', prefix='ui'),
-    Tree('voice', prefix='voice'),
 ]
 
 # 添加py2neo包的VERSION文件到数据文件
@@ -63,31 +58,33 @@ for icon_file in icon_files:
 # 添加样式文件到数据文件
 datas.append(('ui/styles/progress.txt', 'ui/styles'))
 
-# 收集所有 agent-manifest.json 文件
-from pathlib import Path
-for manifest_path in Path('mcpserver').rglob('agent-manifest.json'):
-    datas.append((str(manifest_path), str(manifest_path.parent)))
+# agent-manifest.json 已由上面的 Tree('servers') 整树打包，无需再单独收集。
 
 a = Analysis(
     ['main.py'],
-    pathex=['/data0/code/NagaAgent'],
+    pathex=[os.getcwd()],
     binaries=[],
     datas=datas,
     hiddenimports=[
-        'nagaagent_core',
+        'agents',
+        'html2text',
         'docx',
         'jmcomic',
         'crawl4ai',
-        'nagaagent_core.vendors.agents',
         'langchain_community',
         'playwright',
         'langchain_community.utilities',
         'fastmcp',
-        'live2d'
+        'live2d',
     ],
-    hookspath=[],
+    # hooks/ 下放 hook-<模块>.py，PyInstaller 会自动应用（见 hook-OpenGL.py）。
+    # OpenGL 的平台后端是运行时按 sys.platform 动态 import 的，静态分析看不到，
+    # 必须靠钩子补进 hiddenimports —— 否则打包后 Live2D 一定起不来。
+    hookspath=[os.path.join(os.getcwd(), 'hooks')],
     hooksconfig={},
-    runtime_hooks=[],
+    # 运行时钩子不会自动生效，必须显式列出：压制 PyOpenGL 噪音日志、
+    # 设置 PYOPENGL_PLATFORM、Linux 下补 LD_LIBRARY_PATH。
+    runtime_hooks=['hooks/rthook-opengl.py'],
     excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -111,7 +108,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False, # 不使用UPX，保证速度和兼容性
-    console=True, # GUI应用，不显示控制台
+    console=True, # 保留控制台，便于查看服务日志与启动错误
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

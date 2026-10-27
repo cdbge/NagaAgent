@@ -138,5 +138,11 @@ BUTTON_CONFIGS = {
         "tooltip": "切换Live2D/图片模式",
         "size": (44, 44),
         "style": LIVE2D_BUTTON_STYLE
+    },
+    "font_size": {  # 字体大小 #
+        "icon": "🔠",
+        "tooltip": "调整聊天字体大小（即时生效）",
+        "size": (44, 44),
+        "style": UPLOAD_BUTTON_STYLE
     }
 } 

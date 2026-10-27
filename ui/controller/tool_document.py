@@ -1,13 +1,12 @@
-from nagaagent_core.vendors.PyQt5.QtWidgets import QFileDialog, QMessageBox, QDialog, QVBoxLayout, QLabel, QFrame, QPushButton  # 统一入口 #
-from nagaagent_core.vendors.PyQt5.QtCore import Qt
-from nagaagent_core.vendors.PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QFileDialog, QMessageBox, QDialog, QVBoxLayout, QLabel, QFrame  # 统一入口 #
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
 from ..styles.button_factory import ButtonFactory
 from pathlib import Path
-from system.config import config, AI_NAME, logger
+from core.system.config import config, AI_NAME
 import os
 import requests
 import time
-import shutil
 from . import chat
 
 
@@ -216,7 +215,7 @@ class DocumentTool():
             
             # 调用MCP服务
             import httpx
-            from system.config import get_server_port
+            from core.system.config import get_server_port
             with httpx.Client() as client:
                 response = client.post(
                     f"http://localhost:{get_server_port('mcp_server')}/schedule",
