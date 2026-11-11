@@ -95,10 +95,24 @@ desktop.ini
 ~$*
 
 # API Keys and Secrets (never commit these!)
-*api_key*
-*secret*
-*token*
-*credential*
+# 只按数据文件后缀匹配，不要用裸 *token* / *secret*：
+# 那会把 ui/styles/tokens.py 这类源码一起忽略，本地能跑、clone 下来直接 ImportError
+*api_key*.json
+*api_key*.txt
+*api_key*.yaml
+*api_key*.yml
+*secret*.json
+*secret*.txt
+*secret*.yaml
+*secret*.yml
+*token*.json
+*token*.txt
+*token*.yaml
+*token*.yml
+*credential*.json
+*credential*.txt
+*credential*.yaml
+*credential*.yml
 !**/prompts/**
 
 # Generated documentation

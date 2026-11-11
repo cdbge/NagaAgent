@@ -288,12 +288,12 @@ class SystemChecker:
         """检测目录结构"""
         required_dirs = [
             ("ui", "用户界面"),
-            ("apiserver", "API服务器"),
-            ("agentserver", "Agent服务器"),
-            ("mcpserver", "MCP服务器"),
-            ("summer_memory", "记忆系统"),
-            ("voice", "语音模块"),
-            ("system", "系统核心")
+            ("servers/apiserver", "API服务器"),
+            ("servers/agentserver", "Agent服务器"),
+            ("servers/mcpserver", "MCP服务器"),
+            ("core/summer_memory", "记忆系统"),
+            ("core/voice", "语音模块"),
+            ("core/system", "系统核心")
         ]
 
         all_exist = True

@@ -11,6 +11,7 @@
   6. 未定义名字 / 未使用导入（F821/F401 粗查）
   7. 裸 except: pass 的密度
   8. 已废弃/无引用的模块
+  9. 被 .gitignore 挡住的源码（clone 后缺文件的根源）
 """
 
 from __future__ import annotations
@@ -56,6 +57,9 @@ def check_runtime_qss():
         import os
 
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        # 直接跑脚本时 sys.path[0] 是 scripts/，项目根不在路径上
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
         from PyQt5.QtWidgets import QApplication, QWidget
 
         app = QApplication.instance() or QApplication([])
@@ -176,6 +180,28 @@ for f in sorted((ROOT / "ui").rglob("*.py")):
     pat = rf"(import {mod}\b|from [\w.]*{mod} import)"
     if not re.search(pat, all_src):
         issues.append(("中", rel(f), "可能无任何引用（死代码）"))
+
+# ---------------------------------------------------------------- 9. 被 .gitignore 挡住的源码
+# 踩过：一行裸 `*token*` 把 ui/styles/tokens.py 也忽略了 ——
+# 本地有文件照样跑，别人 clone 下来直接 ModuleNotFoundError。
+import subprocess
+
+try:
+    _res = subprocess.run(
+        [
+            "git", "-C", str(ROOT), "ls-files", "--others", "--ignored",
+            "--exclude-standard", "--", "ui", "core", "servers", "scripts", "skills",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    for _line in _res.stdout.splitlines():
+        _p = _line.strip()
+        if _p.endswith((".py", ".qss")):
+            issues.append(("高", _p, "源码被 .gitignore 忽略：别人 clone 后会缺文件"))
+except Exception as _exc:  # 没有 git 时跳过
+    issues.append(("低", "scripts/audit.py", f"跳过 git 忽略检查: {type(_exc).__name__}"))
 
 # ---------------------------------------------------------------- 输出
 LEVEL_ORDER = {"高": 0, "中": 1, "低": 2}
